@@ -67,6 +67,7 @@ namespace Microsoft.DotNet.HelixPoolProvider.Controllers
         [HttpPost("/acquireagent", Name = nameof(AcquireAgent))]
         [ValidateModelState]
         [Authorize(Policy = "ValidAzDORequestSource")]
+        [RequestSizeLimit(2 * 1024)]
         public async Task<IActionResult> AcquireAgent([FromBody] AgentAcquireItem agentRequestItem)
         {
             // To acquire a new agent, we'll need to do the following:
@@ -247,6 +248,7 @@ namespace Microsoft.DotNet.HelixPoolProvider.Controllers
         [HttpPost("/releaseagent", Name = nameof(ReleaseAgent))]
         [ValidateModelState]
         [Authorize(Policy = "ValidAzDORequestSource")]
+        [RequestSizeLimit(1024)]
         public IActionResult ReleaseAgent([FromBody] AgentReleaseItem agentReleaseItem)
         {
             // Nothing to do here AFAIK.  VSTS will have shut down the agent connection, causing the agent process to exit.
@@ -262,6 +264,7 @@ namespace Microsoft.DotNet.HelixPoolProvider.Controllers
         [HttpPost("/status", Name = nameof(GetAgentRequestStatus))]
         [ValidateModelState]
         [Authorize(Policy = "ValidAzDORequestSource")]
+        [RequestSizeLimit(1024)]
         public async Task<IActionResult> GetAgentRequestStatus([FromBody] AgentRequestStatusItem agentRequestStatusItem)
         {
             // Need to know the job correlation id and work item id.
@@ -426,6 +429,7 @@ namespace Microsoft.DotNet.HelixPoolProvider.Controllers
         /// Currently returns a configuration item.  Could be more sophisticated and instead return something based on the scaleset info.
         /// </remarks>
         [HttpPost("/parallelism", Name = nameof(GetAccountParallelism))]
+        [RequestSizeLimit(1024)]
         public IActionResult GetAccountParallelism([FromBody] AccountParallelismItem accountParallelismItem)
         {
             return Json(new MaxParallelismItem() { maxParallelism = _configuration.MaxParallelism });
@@ -439,6 +443,7 @@ namespace Microsoft.DotNet.HelixPoolProvider.Controllers
         /// <remarks>https://github.com/Microsoft/vsts-pool-providers/blob/master/docs/subdocs/httpspec.md#registerconnection---required</remarks>
         [HttpPost("/register", Name = nameof(RegisterConnection))]
         [ValidateModelState]
+        [RequestSizeLimit(1024)]
         public IActionResult RegisterConnection([FromBody] RegisterConnectionItem registerConnectionItem)
         {
             // TODO: Auth/HMAC when this API actually works on the AzDO side.
