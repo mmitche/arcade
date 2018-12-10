@@ -100,10 +100,10 @@ namespace Microsoft.DotNet.DarcLib
                     _remotesMapping = CreateRemotesMapping(remotesMap);
                 }
 
-                if (!_remotesMapping.ContainsKey(repoPath))
+                if (!_remotesMapping.ContainsKey(dependency.RepoUri))
                 {
                     throw new DarcException($"A key matching '{dependency.RepoUri}' was not " +
-                        $"found in the mapping. Please make sure to include it...");
+                        $"found in the mapping. Please make sure to include it, or specify --remote to enable remote lookup");
                 }
 
                 repoPath = _remotesMapping[repoPath];

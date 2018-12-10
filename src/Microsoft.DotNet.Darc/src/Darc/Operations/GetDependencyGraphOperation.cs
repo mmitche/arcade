@@ -34,13 +34,23 @@ namespace Microsoft.DotNet.Darc.Operations
                     _options.AssetName);
                 DarcSettings darcSettings = null;
 
-                if (_options.Remote)
+                if (!_options.Local)
                 {
-                    if (string.IsNullOrEmpty(_options.RepoUri))
+                    // If a repo uri is specified, then gather dependencies directly from
+                    // that location. Otherwise grab the dependency details from the current
+                    // repo.
+                    if (!string.IsNullOrEmpty(_options.RepoUri))
                     {
-                        Logger.LogError("If '--remote' is set '--repo-uri' is required.");
+                        if (string.IsNullOrEmpty(_options.Branch))
+                        {
+                            Logger.LogError("If '--repo-uri' is set, please specify --branch.");
+                            return Constants.ErrorCode;
+                        }
 
-                        return Constants.ErrorCode;
+                        darcSettings = LocalSettings.GetDarcSettings(
+                            _options,
+                            Logger,
+                            _options.RepoUri);
                     }
 
                     darcSettings = LocalSettings.GetDarcSettings(

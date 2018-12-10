@@ -11,13 +11,13 @@ namespace Microsoft.DotNet.Darc.Options
     [Verb("get-dependency-graph", HelpText = "Get local dependencies.")]
     internal class GetDependencyGraphCommandLineOptions : CommandLineOptions
     {
-        [Option('r', "remote", HelpText = "Get the graph from remote repositories.")]
-        public bool Remote { get; set; }
+        [Option('l', "local", HelpText = "Use only local repositories to obtain graph information.")]
+        public bool Local { get; set; }
 
-        [Option("repo-uri", HelpText = "If remote is set to true, we fetch Version.Details.xml from the remote 'repo-uri'.")]
+        [Option("repo-uri", HelpText = "Obtain the root dependency information from this repo rather than the local repository.")]
         public string RepoUri { get; set; }
 
-        [Option('b', "branch", HelpText = "If 'repo-uri' is set the branch is required.")]
+        [Option("branch", HelpText = "If 'repo-uri' is set, branch to gather dependency information for.")]
         public string Branch { get; set; }
 
         [Option("asset-name", HelpText = "Get the graph based on a single asset and not the whole Version.Details.xml contents.")]

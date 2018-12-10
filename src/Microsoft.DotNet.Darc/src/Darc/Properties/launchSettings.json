@@ -2,7 +2,8 @@
   "profiles": {
     "Microsoft.DotNet.Darc": {
       "commandName": "Project",
-      "commandLineArgs": "authenticate"
+      "commandLineArgs": "get-dependency-graph",
+      "workingDirectory": "D:\\enlistments\\arcade"
     }
   }
 }

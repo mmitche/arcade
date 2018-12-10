@@ -72,6 +72,8 @@ namespace Microsoft.DotNet.Darc.Helpers
         /// options and the user's darc settings file.
         /// </summary>
         /// <param name="options">Command line options</param>
+        /// <param name="logger">Logger</param>
+        /// <param name="repoUri">Repository uri or </param>
         /// <returns>Darc settings for use in remote commands</returns>
         /// <remarks>The command line takes precedence over the darc settings file.</remarks>
         public static DarcSettings GetDarcSettings(CommandLineOptions options, ILogger logger, string repoUri = null)
