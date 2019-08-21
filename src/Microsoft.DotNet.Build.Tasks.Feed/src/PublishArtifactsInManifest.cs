@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using Amazon.Runtime.Internal.Transform;
 using Microsoft.Build.Framework;
 using Microsoft.DotNet.Maestro.Client;
 using Microsoft.DotNet.Maestro.Client.Models;
@@ -76,7 +77,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         [Required]
         public string NugetPath { get; set; }
 
-        private readonly Dictionary<string, List<FeedConfig>> FeedConfigs = new Dictionary<string, List<FeedConfig>>();
+        private Dictionary<string, List<FeedConfig>> _feedConfigs;
 
         private readonly Dictionary<string, List<PackageArtifactModel>> PackagesByCategory = new Dictionary<string, List<PackageArtifactModel>>();
 
@@ -122,29 +123,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 IMaestroApi client = ApiFactory.GetAuthenticated(MaestroApiEndpoint, BuildAssetRegistryToken);
                 Maestro.Client.Models.Build buildInformation = await client.Builds.GetBuildAsync(BARBuildId);
 
-                foreach (var fc in TargetFeedConfig)
-                {
-                    var feedConfig = new FeedConfig()
-                    {
-                        TargetFeedURL = fc.GetMetadata("TargetURL"),
-                        Type = fc.GetMetadata("Type"),
-                        FeedKey = fc.GetMetadata("Token")
-                    };
-
-                    if (string.IsNullOrEmpty(feedConfig.TargetFeedURL) ||
-                        string.IsNullOrEmpty(feedConfig.Type) ||
-                        string.IsNullOrEmpty(feedConfig.FeedKey))
-                    {
-                        Log.LogError($"Invalid FeedConfig entry. TargetURL='{feedConfig.TargetFeedURL}' Type='{feedConfig.Type}' Token='{feedConfig.FeedKey}'");
-                    }
-
-                    string categoryKey = fc.ItemSpec.Trim().ToUpper();
-                    if (!FeedConfigs.TryGetValue(categoryKey, out var feedsList))
-                    {
-                        FeedConfigs[categoryKey] = new List<FeedConfig>();
-                    }
-                    FeedConfigs[categoryKey].Add(feedConfig);
-                }
+                _feedConfigs = ParseTargetFeedConfigs(TargetFeedConfig);
 
                 // Return errors from parsing FeedConfig
                 if (Log.HasLoggedErrors)
@@ -166,6 +145,61 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
             return !Log.HasLoggedErrors;
         }
 
+        /// <summary>
+        ///     Parse out the input TargetFeedConfig into a dictionary of FeedConfig types
+        /// </summary>
+        public Dictionary<string, List<FeedConfig>> ParseTargetFeedConfig()
+        {
+            Dictionary<string, List<FeedConfig>> feedConfigs = new Dictionary<string, List<FeedConfig>>();
+            foreach (var fc in TargetFeedConfig)
+            {
+                string targetFeedUrl = fc.GetMetadata("TargetURL");
+                string feedKey = fc.GetMetadata("Token");
+                string type = fc.GetMetadata("Type");
+
+                if (string.IsNullOrEmpty(targetFeedUrl) ||
+                    string.IsNullOrEmpty(feedKey) ||
+                    string.IsNullOrEmpty(type))
+                {
+                    Log.LogError($"Invalid FeedConfig entry. TargetURL='{targetFeedUrl}' Type='{type}' Token='{feedKey}'");
+                    continue;
+                }
+
+                if (!Enum.TryParse<FeedType>(type, out FeedType feedType))
+                {
+                    Log.LogError($"Invalid Feed config Type '{type}'. Possible values are: {string.Join(',', Enum.GetNames(typeof(FeedType)))}");
+                    continue;
+                }
+
+                var feedConfig = new FeedConfig()
+                {
+                    TargetFeedURL = targetFeedUrl,
+                    Type = feedType,
+                    FeedKey = feedKey
+                };
+
+                string assetSelection = fc.GetMetadata("AssetSelection");
+                if (!string.IsNullOrEmpty(assetSelection))
+                {
+                    if (!Enum.TryParse<AssetSelection>(assetSelection, out AssetSelection selection))
+                    {
+                        Log.LogError($"Invalid Feed config AssetSelection '{type}'. Possible values are: {string.Join(',', Enum.GetNames(typeof(AssetSelection)))}");
+                        feedConfig.AssetSelection = selection;
+                        continue;
+                    }
+                }
+
+                string categoryKey = fc.ItemSpec.Trim().ToUpper();
+                if (!_feedConfigs.TryGetValue(categoryKey, out var feedsList))
+                {
+                    _feedConfigs[categoryKey] = new List<FeedConfig>();
+                }
+                _feedConfigs[categoryKey].Add(feedConfig);
+            }
+
+            return feedConfigs;
+        }
+
         private async Task HandlePackagePublishingAsync(IMaestroApi client, Maestro.Client.Models.Build buildInformation)
         {
             foreach (var packagesPerCategory in PackagesByCategory)
@@ -173,7 +207,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 var category = packagesPerCategory.Key;
                 var packages = packagesPerCategory.Value;
 
-                if (FeedConfigs.TryGetValue(category, out List<FeedConfig> feedConfigsForCategory))
+                if (_feedConfigs.TryGetValue(category, out List<FeedConfig> feedConfigsForCategory))
                 {
                     foreach (var feedConfig in feedConfigsForCategory)
                     {
@@ -207,7 +241,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 var category = blobsPerCategory.Key;
                 var blobs = blobsPerCategory.Value;
 
-                if (FeedConfigs.TryGetValue(category, out List<FeedConfig> feedConfigsForCategory))
+                if (_feedConfigs.TryGetValue(category, out List<FeedConfig> feedConfigsForCategory))
                 {
                     foreach (var feedConfig in feedConfigsForCategory)
                     {
@@ -234,6 +268,13 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
             }
         }
 
+        /// <summary>
+        ///     Split the artifacts into categories.
+        ///     
+        ///     Categories are either specified explicitly when publishing (with the asset attribute "Category", separated by ';'),
+        ///     or they are inferred based on the extension of the asset.
+        /// </summary>
+        /// <param name="buildModel"></param>
         private void SplitArtifactsInCategories(BuildModel buildModel)
         {
             foreach (var packageAsset in buildModel.Artifacts.Packages)
@@ -495,6 +536,14 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 return null;
             }
         }
+
+        /// <summary>
+        ///     Infers the category based on the extension of the particular asset
+        ///     
+        ///     If no category can be inferred, then "NETCORE" is used.
+        /// </summary>
+        /// <param name="assetId">ID of asset</param>
+        /// <returns>Asset cateogry</returns>
         private string InferCategory(string assetId)
         {
             var extension = Path.GetExtension(assetId).ToUpper();
@@ -524,13 +573,31 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         }
     }
 
+    public enum FeedType
+    {
+        AzDoNugetFeed,
+        AzureStorageFeed
+    }
+
+    /// <summary>
+    ///     Which assets from the category should be
+    ///     added to the feed.
+    /// </summary>
+    public enum AssetSelection
+    {
+        All,
+        ShippingOnly,
+        NonShippingOnly
+    }
+
     /// <summary>
     /// Hold properties of a target feed endpoint.
     /// </summary>
-    internal class FeedConfig
+    public class FeedConfig
     {
         public string TargetFeedURL { get; set; }
-        public string Type { get; set; }
+        public FeedType Type { get; set; }
         public string FeedKey { get; set; }
+        public AssetSelection AssetSelection { get; set; } = AssetSelection.All;
     }
 }
