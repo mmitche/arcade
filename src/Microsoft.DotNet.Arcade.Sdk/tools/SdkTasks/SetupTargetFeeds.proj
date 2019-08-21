@@ -21,6 +21,11 @@
       - InstallersAzureAccountKey
       - ChecksumsTargetStaticFeed
       - ChecksumsAzureAccountKey
+      - PublishToAzureDevOpsNuGetFeeds  : If true, publish NuGet packages to Azure DevOps feeds.
+      - AzureDevOpsShippingFeed         : URL of the feed Azure DevOps NuGet feed to publish non-stable shipping packages to.
+      - AzureDevOpsShippingFeedKey      : Key of the feed Azure DevOps NuGet feed to publish non-stable shipping packages to.
+      - AzureDevOpsTransportFeed        : URL of the feed Azure DevOps NuGet feed to publish to transport packages to. Will only contain non-stable packages.
+      - AzureDevOpsTransportFeedKey     : Key of the feed Azure DevOps NuGet feed to publish to transport packages to.
 
       - CreateTestConfig            : If set to true the user will be able to test a TargetFeedConfig 
                                       constructed using parameters below:
@@ -53,8 +58,12 @@
       Text="Parameters 'InstallersTargetStaticFeed/Key' are empty." />
 
     <Error
-      Condition="('$(ChecksumsTargetStaticFeed)' == '' or '$(ChecksumsAzureAccountKey)' == '') and '$(PublishInstallersAndChecksums)' == 'true'"
-      Text="Parameters 'ChecksumsTargetStaticFeed/Key' are empty." />
+      Condition="('$(AzureDevOpsShippingFeed)' == '' or '$(AzureDevOpsShippingFeedKey)' == '') and '$(PublishToAzureDevOpsNuGetFeeds)' == 'true'"
+      Text="Parameters 'AzureDevOpsShippingFeed/AzureDevOpsShippingFeedKey' are empty." />
+
+    <Error
+      Condition="('$(AzureDevOpsTransportFeed)' == '' or '$(AzureDevOpsTransportFeedKey)' == '') and '$(PublishToAzureDevOpsNuGetFeeds)' == 'true'"
+      Text="Parameters 'AzureDevOpsTransportFeed/AzureDevOpsTransportFeedKey' are empty." />
 
     <!--
       If the user wants to use a test configuration we'll create a TargetFeedConfig using
@@ -146,6 +155,21 @@
         TargetURL="$(ChecksumsTargetStaticFeed)"
         Type="AzureStorageFeed"
         Token="$(ChecksumsAzureAccountKey)" />
+
+      <!--
+        If there is a request to also publish to NuGet feeds, we will divide the packages into
+        shipping and non-shipping (transport) and push them to separate feeds.
+      -->
+      <TargetFeedConfig Condition="'$(PublishToAzureDevOpsNuGetFeeds)' == 'true'"
+        Include="NetCore"
+        TargetURL="$(AzureDevOpsShippingFeed)"
+        Type="AzureNuGetFeed"
+        Token="$(AzureDevOpsShippingFeedKey)" />
+      <TargetFeedConfig Condition="'$(PublishToAzureDevOpsNuGetFeeds)' == 'true'"
+        Include="NetCore"
+        TargetURL="$(AzureDevOpsTransportFeed)"
+        Type="AzureNuGetFeed"
+        Token="$(AzureDevOpsTransportFeedKey)" />
     </ItemGroup>
 
     <Error
