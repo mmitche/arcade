@@ -3,6 +3,8 @@
 // See the LICENSE file in the project root for more information.
 
 using Amazon.Runtime.Internal.Transform;
+using Amazon.Runtime.Internal.Util;
+using Amazon.S3.Model;
 using Microsoft.Build.Framework;
 using Microsoft.DotNet.Maestro.Client;
 using Microsoft.DotNet.Maestro.Client.Models;
@@ -13,6 +15,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using MSBuild = Microsoft.Build.Utilities;
 
@@ -72,12 +75,17 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         public string BuildAssetRegistryToken { get; set; }
 
         /// <summary>
+        /// Maximum number of parallel uploads for the upload tasks
+        /// </summary>
+        public int MaxClients { get; set; } = 8;
+
+        /// <summary>
         /// Directory where "nuget.exe" is installed. This will be used to publish packages.
         /// </summary>
         [Required]
         public string NugetPath { get; set; }
 
-        private Dictionary<string, List<FeedConfig>> _feedConfigs;
+        public readonly Dictionary<string, List<FeedConfig>> FeedConfigs = new Dictionary<string, List<FeedConfig>>();
 
         private readonly Dictionary<string, List<PackageArtifactModel>> PackagesByCategory = new Dictionary<string, List<PackageArtifactModel>>();
 
@@ -123,7 +131,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 IMaestroApi client = ApiFactory.GetAuthenticated(MaestroApiEndpoint, BuildAssetRegistryToken);
                 Maestro.Client.Models.Build buildInformation = await client.Builds.GetBuildAsync(BARBuildId);
 
-                _feedConfigs = ParseTargetFeedConfigs(TargetFeedConfig);
+                ParseTargetFeedConfig();
 
                 // Return errors from parsing FeedConfig
                 if (Log.HasLoggedErrors)
@@ -148,9 +156,8 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         /// <summary>
         ///     Parse out the input TargetFeedConfig into a dictionary of FeedConfig types
         /// </summary>
-        public Dictionary<string, List<FeedConfig>> ParseTargetFeedConfig()
+        public void ParseTargetFeedConfig()
         {
-            Dictionary<string, List<FeedConfig>> feedConfigs = new Dictionary<string, List<FeedConfig>>();
             foreach (var fc in TargetFeedConfig)
             {
                 string targetFeedUrl = fc.GetMetadata("TargetURL");
@@ -165,9 +172,9 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                     continue;
                 }
 
-                if (!Enum.TryParse<FeedType>(type, out FeedType feedType))
+                if (!Enum.TryParse<FeedType>(type, true, out FeedType feedType))
                 {
-                    Log.LogError($"Invalid Feed config Type '{type}'. Possible values are: {string.Join(',', Enum.GetNames(typeof(FeedType)))}");
+                    Log.LogError($"Invalid feed config type '{type}'. Possible values are: {string.Join(", ", Enum.GetNames(typeof(FeedType)))}");
                     continue;
                 }
 
@@ -181,23 +188,21 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 string assetSelection = fc.GetMetadata("AssetSelection");
                 if (!string.IsNullOrEmpty(assetSelection))
                 {
-                    if (!Enum.TryParse<AssetSelection>(assetSelection, out AssetSelection selection))
+                    if (!Enum.TryParse<AssetSelection>(assetSelection, true, out AssetSelection selection))
                     {
-                        Log.LogError($"Invalid Feed config AssetSelection '{type}'. Possible values are: {string.Join(',', Enum.GetNames(typeof(AssetSelection)))}");
-                        feedConfig.AssetSelection = selection;
+                        Log.LogError($"Invalid feed config asset selection '{type}'. Possible values are: {string.Join(", ", Enum.GetNames(typeof(AssetSelection)))}");
                         continue;
                     }
+                    feedConfig.AssetSelection = selection;
                 }
 
                 string categoryKey = fc.ItemSpec.Trim().ToUpper();
-                if (!_feedConfigs.TryGetValue(categoryKey, out var feedsList))
+                if (!FeedConfigs.TryGetValue(categoryKey, out var feedsList))
                 {
-                    _feedConfigs[categoryKey] = new List<FeedConfig>();
+                    FeedConfigs[categoryKey] = new List<FeedConfig>();
                 }
-                _feedConfigs[categoryKey].Add(feedConfig);
+                FeedConfigs[categoryKey].Add(feedConfig);
             }
-
-            return feedConfigs;
         }
 
         private async Task HandlePackagePublishingAsync(IMaestroApi client, Maestro.Client.Models.Build buildInformation)
@@ -207,23 +212,23 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 var category = packagesPerCategory.Key;
                 var packages = packagesPerCategory.Value;
 
-                if (_feedConfigs.TryGetValue(category, out List<FeedConfig> feedConfigsForCategory))
+                if (FeedConfigs.TryGetValue(category, out List<FeedConfig> feedConfigsForCategory))
                 {
                     foreach (var feedConfig in feedConfigsForCategory)
                     {
-                        var feedType = feedConfig.Type.ToUpper();
+                        List<PackageArtifactModel> filteredPackages = FilterPackages(packages, feedConfig);
 
-                        if (feedType.Equals("AZDONUGETFEED"))
+                        switch (feedConfig.Type)
                         {
-                            await PublishPackagesToAzDoNugetFeedAsync(packages, client, buildInformation, feedConfig);
-                        }
-                        else if (feedType.Equals("AZURESTORAGEFEED"))
-                        {
-                            await PublishPackagesToAzureStorageNugetFeedAsync(packages, client, buildInformation, feedConfig);
-                        }
-                        else
-                        {
-                            Log.LogError($"Unknown target feed type for category '{category}': '{feedType}'.");
+                            case FeedType.AzDoNugetFeed:
+                                await PublishPackagesToAzDoNugetFeedAsync(filteredPackages, client, buildInformation, feedConfig);
+                                break;
+                            case FeedType.AzureStorageFeed:
+                                await PublishPackagesToAzureStorageNugetFeedAsync(filteredPackages, client, buildInformation, feedConfig);
+                                break;
+                            default:
+                                Log.LogError($"Unknown target feed type for category '{category}': '{feedConfig.Type}'.");
+                                break;
                         }
                     }
                 }
@@ -234,6 +239,31 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
             }
         }
 
+        private List<PackageArtifactModel> FilterPackages(List<PackageArtifactModel> packages, FeedConfig feedConfig)
+        {
+            // If the feed config wants further filtering, do that now.
+            List<PackageArtifactModel> filteredPackages = null;
+            switch (feedConfig.AssetSelection)
+            {
+                case AssetSelection.All:
+                    // No filtering needed
+                    filteredPackages = packages;
+                    break;
+                case AssetSelection.NonShippingOnly:
+                    filteredPackages = packages.Where(p => p.NonShipping).ToList();
+                    break;
+                case AssetSelection.ShippingOnly:
+                    filteredPackages = packages.Where(p => !p.NonShipping).ToList();
+                    break;
+                default:
+                    // Throw NYI here instead of logging an error because error would have already been logged in the
+                    // parser for the user.
+                    throw new NotImplementedException("Unknown asset selection type '{feedConfig.AssetSelection}'");
+            }
+
+            return filteredPackages;
+        }
+
         private async Task HandleBlobPublishingAsync(IMaestroApi client, Maestro.Client.Models.Build buildInformation)
         {
             foreach (var blobsPerCategory in BlobsByCategory)
@@ -241,23 +271,23 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 var category = blobsPerCategory.Key;
                 var blobs = blobsPerCategory.Value;
 
-                if (_feedConfigs.TryGetValue(category, out List<FeedConfig> feedConfigsForCategory))
+                if (FeedConfigs.TryGetValue(category, out List<FeedConfig> feedConfigsForCategory))
                 {
                     foreach (var feedConfig in feedConfigsForCategory)
                     {
-                        var feedType = feedConfig.Type.ToUpper();
+                        List<BlobArtifactModel> filteredBlobs = FilterBlobs(blobs, feedConfig);
 
-                        if (feedType.Equals("AZDONUGETFEED"))
+                        switch (feedConfig.Type)
                         {
-                            await PublishBlobsToAzDoNugetFeedAsync(blobs, client, buildInformation, feedConfig);
-                        }
-                        else if (feedType.Equals("AZURESTORAGEFEED"))
-                        {
-                            await PublishBlobsToAzureStorageNugetFeedAsync(blobs, client, buildInformation, feedConfig);
-                        }
-                        else
-                        {
-                            Log.LogError($"Unknown target feed type for category '{category}': '{feedType}'.");
+                            case FeedType.AzDoNugetFeed:
+                                await PublishBlobsToAzDoNugetFeedAsync(filteredBlobs, client, buildInformation, feedConfig);
+                                break;
+                            case FeedType.AzureStorageFeed:
+                                await PublishBlobsToAzureStorageNugetFeedAsync(filteredBlobs, client, buildInformation, feedConfig);
+                                break;
+                            default:
+                                Log.LogError($"Unknown target feed type for category '{category}': '{feedConfig.Type}'.");
+                                break;
                         }
                     }
                 }
@@ -266,6 +296,37 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                     Log.LogError($"No target feed configuration found for artifact category: '{category}'.");
                 }
             }
+        }
+
+        /// <summary>
+        ///     Filter the blobs by the feed config information
+        /// </summary>
+        /// <param name="blobs"></param>
+        /// <param name="feedConfig"></param>
+        /// <returns></returns>
+        private List<BlobArtifactModel> FilterBlobs(List<BlobArtifactModel> blobs, FeedConfig feedConfig)
+        {
+            // If the feed config wants further filtering, do that now.
+            List<BlobArtifactModel> filteredBlobs = null;
+            switch (feedConfig.AssetSelection)
+            {
+                case AssetSelection.All:
+                    // No filtering needed
+                    filteredBlobs = blobs;
+                    break;
+                case AssetSelection.NonShippingOnly:
+                    filteredBlobs = blobs.Where(p => p.NonShipping).ToList();
+                    break;
+                case AssetSelection.ShippingOnly:
+                    filteredBlobs = blobs.Where(p => !p.NonShipping).ToList();
+                    break;
+                default:
+                    // Throw NYI here instead of logging an error because error would have already been logged in the
+                    // parser for the user.
+                    throw new NotImplementedException("Unknown asset selection type '{feedConfig.AssetSelection}'");
+            }
+
+            return filteredBlobs;
         }
 
         /// <summary>
@@ -328,8 +389,11 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
             Maestro.Client.Models.Build buildInformation,
             FeedConfig feedConfig)
         {
+            // Filter packages down based on selection
+
             foreach (var package in packagesToPublish)
             {
+
                 var assetRecord = buildInformation.Assets
                     .Where(a => a.Name.Equals(package.Id) && a.Version.Equals(package.Version))
                     .FirstOrDefault();
@@ -349,6 +413,71 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 }
 
                 await client.Assets.AddAssetLocationToAssetAsync(assetRecord.Id, AddAssetLocationToAssetAssetLocationType.NugetFeed, feedConfig.TargetFeedURL);
+            }
+
+            await PushNugetPackagesAsync(packagesToPublish, feedConfig, maxClients: MaxClients);
+        }
+
+        public Task<int> StartProcessAsync(string path, string arguments)
+        {
+            ProcessStartInfo info = new ProcessStartInfo(path, arguments);
+            Process process = new Process
+            {
+                StartInfo = info
+            };
+
+            var completionSource = new TaskCompletionSource<int>();
+
+            process.Exited += (obj, args) =>
+            {
+                completionSource.SetResult(((Process)obj).ExitCode);
+                process.Dispose();
+            };
+
+            process.ErrorDataReceived += (obj, args) =>
+            {
+                Log.LogMessage(MessageImportance.High, args.Data);
+            };
+
+            process.OutputDataReceived += (obj, args) =>
+            {
+                Log.LogMessage(MessageImportance.Low, args.Data);
+            };
+
+            process.Start();
+
+            return completionSource.Task;
+        }
+
+        /// <summary>
+        ///     Push nuget packages to the azure devops feed.
+        /// </summary>
+        /// <param name="packagesToPublish"></param>
+        /// <param name="feedConfig"></param>
+        /// <returns></returns>
+        public async Task PushNugetPackagesAsync(List<PackageArtifactModel> packagesToPublish, FeedConfig feedConfig, int maxClients)
+        {
+            var localPackageFiles = packagesToPublish.Select(p => $"{PackageAssetsBasePath}{p.Id}.{p.Version}.nupkg");
+            foreach (var packageToPublish in localPackageFiles)
+            {
+                using (var clientThrottle = new SemaphoreSlim(maxClients, maxClients))
+                {
+                    try
+                    {
+                        // Wait to avoid starting too many processes.
+                        await clientThrottle.WaitAsync();
+                        Log.LogMessage(MessageImportance.High, $"Pushing package '{packageToPublish}' to feed {feedConfig.TargetFeedURL}");
+                        int result = await StartProcessAsync(NugetPath, $"push \"{packageToPublish}\"-Source \"{feedConfig.TargetFeedURL}\" -ApiKey \"{feedConfig.FeedKey}\"");
+                        if (result != 0)
+                        {
+                            Log.LogError($"Failed to push '{packageToPublish}'.");
+                        }
+                    }
+                    finally
+                    {
+                        clientThrottle.Release();
+                    }
+                }
             }
         }
 
@@ -480,7 +609,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 await client.Assets.AddAssetLocationToAssetAsync(assetRecord.Id, AddAssetLocationToAssetAssetLocationType.Container, feedConfig.TargetFeedURL);
             }
 
-            await blobFeedAction.PublishToFlatContainerAsync(blobs, maxClients: 8, pushOptions);
+            await blobFeedAction.PublishToFlatContainerAsync(blobs, maxClients: MaxClients, pushOptions);
         }
 
         private BlobFeedAction CreateBlobFeedAction(FeedConfig feedConfig)

@@ -51,7 +51,7 @@
       Condition="'@(ManifestFiles)' == ''"
       Text="No manifest file was found in the provided path: $(ManifestsBasePath)" />
 
-    <!-- 
+    <!--
       **Iterate** publishing assets from each manifest file. 
     -->
     <PublishArtifactsInManifest

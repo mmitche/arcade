@@ -164,12 +164,14 @@
         Include="NetCore"
         TargetURL="$(AzureDevOpsShippingFeed)"
         Type="AzureNuGetFeed"
-        Token="$(AzureDevOpsShippingFeedKey)" />
+        Token="$(AzureDevOpsShippingFeedKey)"
+        AssetSelection="ShippingOnly" />
       <TargetFeedConfig Condition="'$(PublishToAzureDevOpsNuGetFeeds)' == 'true'"
         Include="NetCore"
         TargetURL="$(AzureDevOpsTransportFeed)"
         Type="AzureNuGetFeed"
-        Token="$(AzureDevOpsTransportFeedKey)" />
+        Token="$(AzureDevOpsTransportFeedKey)"
+        AssetSelection="NonShippingOnly" />
     </ItemGroup>
 
     <Error
