@@ -7,8 +7,6 @@ using Microsoft.DotNet.Deployment.Tasks.Links.src;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
-using System.Net.Http;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Microsoft.DotNet.Deployment.Tasks.Links

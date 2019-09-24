@@ -61,6 +61,22 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         /// Metadata TargetURL: target URL where assets of this category should be published to.
         /// Metadata Type: type of the target feed.
         /// Metadata Token: token to be used for publishing to target feed.
+        /// Metadata AssetSelection (optional): Can be "All", "ShippingOnly" or "NonShippingOnly"
+        ///                                     Determines which assets are pushed to this feed config
+        /// Metadata Internal (optional): If true, the feed is assumed to be only internally visible.
+        ///                               If false, the feed is public.
+        ///                               If not provided, then this task will attempt to determine whether the feed URL is publicly visible or not.
+        /// Metadata Isolated (optional): If true, the feed is assumed to be isolated, and stable packages can be pushed to it.
+        ///                               If false, the feed is assumed to be non-isolated, and stable packages will be rejected.
+        ///                               If not provided then defaults to false.
+        /// Metadata AllowOverwrite (optional): If true, existing azure blob storage assets can be overwritten
+        ///                                     If false, an error is thrown if an asset already exists
+        ///                                     If not provided then defaults to false.
+        ///                                     Azure DevOps feeds can never be overwritten.
+        /// Metadata AkaShortUrlPath (optional): If provided, AKA ms links are generated (for artifacts blobs only) that target this short
+        ///                                      url path. The link is construct as such:
+        ///                                      aka.ms/AkaShortUrlPath/BlobArtifactPath -> Target blob url
+        ///                                      If specified, then AkaMSClientId, AkaMSClientSecret and AkaMSTenant must be provided.
         /// </summary>
         [Required]
         public ITaskItem[] TargetFeedConfig { get; set; }
@@ -126,6 +142,14 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         /// - Stable packages to non-isolated feeds
         /// </summary>
         public bool SkipSafetyChecks { get; set; } = false;
+
+        #region Information for AKA MS link generation
+
+        public string AkaMSClientId { get; set; }
+        public string AkaMSClientSecret { get; set; }
+        public string AksMSTenant { get; set; }
+
+        #endregion
 
         public readonly Dictionary<string, List<FeedConfig>> FeedConfigs = new Dictionary<string, List<FeedConfig>>();
 
@@ -301,6 +325,9 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                         }
                         feedConfig.AllowOverwrite = feedSetting;
                     }
+
+                    string akaUrlShortPath = fc.GetMetadata(nameof(FeedConfig.AkaShortUrlPath));
+
 
                     string categoryKey = fc.ItemSpec.Trim().ToUpper();
                     if (!FeedConfigs.TryGetValue(categoryKey, out var feedsList))
@@ -1238,5 +1265,10 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         /// valid for azure blob storage feeds.
         /// </summary>
         public bool AllowOverwrite { get; set; } = false;
+        /// <summary>
+        /// Prefix of aka.ms links that should be generated for blobs.
+        /// Not applicable to packages.
+        /// </summary>
+        public string AkaShortUrlPath { get; set; }
     }
 }
