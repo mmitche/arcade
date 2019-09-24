@@ -98,7 +98,7 @@ namespace Microsoft.DotNet.Helix.Client
                 throw new ArgumentNullException(nameof(analysisType));
             }
 
-            if (body == default)
+            if (body == default(FailureReason))
             {
                 throw new ArgumentNullException(nameof(body));
             }

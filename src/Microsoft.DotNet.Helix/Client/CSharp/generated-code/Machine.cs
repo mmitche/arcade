@@ -168,7 +168,7 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (body == default)
+            if (body == default(MachineStateChangeRequest))
             {
                 throw new ArgumentNullException(nameof(body));
             }
@@ -202,7 +202,7 @@ namespace Microsoft.DotNet.Helix.Client
                 _req = new HttpRequestMessage(HttpMethod.Put, _url);
 
                 string _requestContent = null;
-                if (body != default)
+                if (body != default(MachineStateChangeRequest))
                 {
                     _requestContent = Client.Serialize(body);
                     _req.Content = new StringContent(_requestContent, Encoding.UTF8)

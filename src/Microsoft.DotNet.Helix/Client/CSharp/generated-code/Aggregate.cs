@@ -178,12 +178,12 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (groupBy == default)
+            if (groupBy == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(groupBy));
             }
 
-            if (otherProperties == default)
+            if (otherProperties == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(otherProperties));
             }
@@ -201,14 +201,14 @@ namespace Microsoft.DotNet.Helix.Client
             {
                 _query.Add("workitem", Client.Serialize(workitem));
             }
-            if (groupBy != default)
+            if (groupBy != default(ImmutableList<string>))
             {
                 foreach (var _item in groupBy)
                 {
                     _query.Add("groupBy", Client.Serialize(_item));
                 }
             }
-            if (otherProperties != default)
+            if (otherProperties != default(ImmutableList<string>))
             {
                 foreach (var _item in otherProperties)
                 {
@@ -309,12 +309,12 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (source == default)
+            if (source == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(source));
             }
 
-            if (type == default)
+            if (type == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(type));
             }
@@ -323,14 +323,14 @@ namespace Microsoft.DotNet.Helix.Client
             var _path = "/api/2019-06-17/aggregate/build/history";
 
             var _query = new QueryBuilder();
-            if (source != default)
+            if (source != default(ImmutableList<string>))
             {
                 foreach (var _item in source)
                 {
                     _query.Add("source", Client.Serialize(_item));
                 }
             }
-            if (type != default)
+            if (type != default(ImmutableList<string>))
             {
                 foreach (var _item in type)
                 {
@@ -419,12 +419,12 @@ namespace Microsoft.DotNet.Helix.Client
                 throw new ArgumentNullException(nameof(buildNumber));
             }
 
-            if (sources == default)
+            if (sources == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(sources));
             }
 
-            if (types == default)
+            if (types == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(types));
             }
@@ -433,14 +433,14 @@ namespace Microsoft.DotNet.Helix.Client
             var _path = "/api/2019-06-17/aggregate/build";
 
             var _query = new QueryBuilder();
-            if (sources != default)
+            if (sources != default(ImmutableList<string>))
             {
                 foreach (var _item in sources)
                 {
                     _query.Add("sources", Client.Serialize(_item));
                 }
             }
-            if (types != default)
+            if (types != default(ImmutableList<string>))
             {
                 foreach (var _item in types)
                 {
@@ -540,7 +540,7 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (groupBy == default)
+            if (groupBy == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(groupBy));
             }
@@ -554,7 +554,7 @@ namespace Microsoft.DotNet.Helix.Client
             var _path = "/api/2019-06-17/aggregate/jobs";
 
             var _query = new QueryBuilder();
-            if (groupBy != default)
+            if (groupBy != default(ImmutableList<string>))
             {
                 foreach (var _item in groupBy)
                 {
@@ -671,7 +671,7 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (groupBy == default)
+            if (groupBy == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(groupBy));
             }
@@ -680,7 +680,7 @@ namespace Microsoft.DotNet.Helix.Client
             var _path = "/api/2019-06-17/aggregate/workitems";
 
             var _query = new QueryBuilder();
-            if (groupBy != default)
+            if (groupBy != default(ImmutableList<string>))
             {
                 foreach (var _item in groupBy)
                 {
@@ -811,7 +811,7 @@ namespace Microsoft.DotNet.Helix.Client
                 throw new ArgumentNullException(nameof(build));
             }
 
-            if (groupBy == default)
+            if (groupBy == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(groupBy));
             }
@@ -859,7 +859,7 @@ namespace Microsoft.DotNet.Helix.Client
             {
                 _query.Add("analysisName", Client.Serialize(analysisName));
             }
-            if (groupBy != default)
+            if (groupBy != default(ImmutableList<string>))
             {
                 foreach (var _item in groupBy)
                 {
@@ -1146,7 +1146,7 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (groupBy == default)
+            if (groupBy == default(ImmutableList<string>))
             {
                 throw new ArgumentNullException(nameof(groupBy));
             }
@@ -1165,7 +1165,7 @@ namespace Microsoft.DotNet.Helix.Client
             var _path = "/api/2019-06-17/aggregate/investigation";
 
             var _query = new QueryBuilder();
-            if (groupBy != default)
+            if (groupBy != default(ImmutableList<string>))
             {
                 foreach (var _item in groupBy)
                 {
@@ -1412,7 +1412,7 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (body == default)
+            if (body == default(MultiSourceRequest))
             {
                 throw new ArgumentNullException(nameof(body));
             }

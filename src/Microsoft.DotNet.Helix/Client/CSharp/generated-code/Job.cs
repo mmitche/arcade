@@ -217,7 +217,7 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (body == default)
+            if (body == default(JobCreationRequest))
             {
                 throw new ArgumentNullException(nameof(body));
             }
@@ -254,7 +254,7 @@ namespace Microsoft.DotNet.Helix.Client
                 }
 
                 string _requestContent = null;
-                if (body != default)
+                if (body != default(JobCreationRequest))
                 {
                     _requestContent = Client.Serialize(body);
                     _req.Content = new StringContent(_requestContent, Encoding.UTF8)
