@@ -4,6 +4,7 @@
 
 using Microsoft.Build.Framework;
 using Microsoft.DotNet.Build.CloudTestTasks;
+using Microsoft.DotNet.Deployment.Tasks.Links.src;
 using Microsoft.DotNet.Maestro.Client;
 using Microsoft.DotNet.Maestro.Client.Models;
 using Microsoft.DotNet.VersionTools.BuildManifest.Model;
@@ -17,6 +18,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -31,6 +33,8 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
     /// </summary>
     public class PublishArtifactsInManifest : MSBuild.Task
     {
+        const string FeedExpectedSuffix = "index.json";
+
         // Matches package feeds like
         // https://dotnet-feed-internal.azurewebsites.net/container/dotnet-core-internal/sig/dsdfasdfasdf234234s/se/2020-02-02/darc-int-dotnet-arcade-services-babababababe-08/index.json
         const string AzureStorageProxyFeedPattern =
@@ -147,8 +151,10 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
 
         public string AkaMSClientId { get; set; }
         public string AkaMSClientSecret { get; set; }
-        public string AksMSTenant { get; set; }
-
+        public string AkaMSTenant { get; set; }
+        public string AkaMsOwners { get; set; }
+        public string AkaMSCreatedBy { get; set; }
+        public string AkaMSGroupOwner { get; set; }
         #endregion
 
         public readonly Dictionary<string, List<FeedConfig>> FeedConfigs = new Dictionary<string, List<FeedConfig>>();
@@ -253,6 +259,12 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                         continue;
                     }
 
+                    if (!targetFeedUrl.EndsWith(FeedExpectedSuffix))
+                    {
+                        Log.LogError($"Exepcted that feed '{targetFeedUrl}' would end in {FeedExpectedSuffix}");
+                        continue;
+                    }
+
                     if (!Enum.TryParse<FeedType>(type, true, out FeedType feedType))
                     {
                         Log.LogError($"Invalid feed config type '{type}'. Possible values are: {string.Join(", ", Enum.GetNames(typeof(FeedType)))}");
@@ -327,6 +339,19 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                     }
 
                     string akaUrlShortPath = fc.GetMetadata(nameof(FeedConfig.AkaShortUrlPath));
+                    if (!string.IsNullOrEmpty(akaUrlShortPath))
+                    {
+                        // Verify other inputs are provided
+                        if (string.IsNullOrEmpty(AkaMSClientId) ||
+                            string.IsNullOrEmpty(AkaMSClientSecret) ||
+                            string.IsNullOrEmpty(AkaMSTenant) ||
+                            string.IsNullOrEmpty(AkaMsOwners))
+                        {
+                            Log.LogError($"If a short url path is provided, please provide {nameof(AkaMSClientId)}, {nameof(AkaMSClientSecret)}, " +
+                                $"{nameof(AkaMSTenant)}, {nameof(AkaMsOwners)}, {nameof(AkaMSCreatedBy)}");
+                            continue;
+                        }
+                    }
 
 
                     string categoryKey = fc.ItemSpec.Trim().ToUpper();
@@ -1095,16 +1120,17 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 })
                 .ToArray();
 
-            var blobFeedAction = CreateBlobFeedAction(feedConfig);
-            var pushOptions = new PushOptions
+            string targetFeedUrl = feedConfig.TargetURL;
+            BlobFeedAction blobFeedAction = CreateBlobFeedAction(feedConfig);
+            PushOptions pushOptions = new PushOptions
             {
                 AllowOverwrite = feedConfig.AllowOverwrite,
                 PassIfExistingItemIdentical = true
             };
 
-            foreach (var blob in blobsToPublish)
+            foreach (BlobArtifactModel blob in blobsToPublish)
             {
-                var assetRecord = buildInformation.Assets
+                Asset assetRecord = buildInformation.Assets
                     .Where(a => a.Name.Equals(blob.Id))
                     .SingleOrDefault();
 
@@ -1114,18 +1140,39 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                     continue;
                 }
 
-                var assetWithLocations = await client.Assets.GetAssetAsync(assetRecord.Id);
+                Asset assetWithLocations = await client.Assets.GetAssetAsync(assetRecord.Id);
 
-                if (assetWithLocations?.Locations.Any(al => al.Location.Equals(feedConfig.TargetURL, StringComparison.OrdinalIgnoreCase)) ?? false)
+                if (assetWithLocations?.Locations.Any(al => al.Location.Equals(targetFeedUrl, StringComparison.OrdinalIgnoreCase)) ?? false)
                 {
-                    Log.LogMessage($"Asset with Id {blob.Id} already has location {feedConfig.TargetURL}");
+                    Log.LogMessage($"Asset with Id {blob.Id} already has location {targetFeedUrl}");
                     continue;
                 }
 
-                await client.Assets.AddAssetLocationToAssetAsync(assetRecord.Id, AddAssetLocationToAssetAssetLocationType.Container, feedConfig.TargetURL);
+                await client.Assets.AddAssetLocationToAssetAsync(assetRecord.Id, AddAssetLocationToAssetAssetLocationType.Container, targetFeedUrl);
             }
 
             await blobFeedAction.PublishToFlatContainerAsync(blobs, maxClients: MaxClients, pushOptions);
+
+            // Update or create aka ms links if desired.
+            if (!string.IsNullOrEmpty(feedConfig.AkaShortUrlPath))
+            {
+                string targetUrlWithoutSuffix = targetFeedUrl.Remove(targetFeedUrl.Length - targetFeedUrl.Length);
+
+                Log.LogMessage(MessageImportance.High, "Creating aka.ms links for blobs:");
+                List<AkaMSLink> linksToCreate = blobsToPublish.Select(blob =>
+                {
+                    AkaMSLink newLink = new AkaMSLink
+                    {
+                        ShortUrl = $"{feedConfig.AkaShortUrlPath}{blob.Id}",
+                        TargetUrl = $"{targetFeedUrl}{blob.Id}"
+                    };
+                    Log.LogMessage(MessageImportance.High, $"  {newLink.ShortUrl} -> {newLink.TargetUrl}");
+                    return newLink;
+                }).ToList();
+
+                AkaMSLinkManager linkManager = new AkaMSLinkManager(AkaMSClientId, AkaMSClientSecret, AkaMSTenant);
+                await linkManager.CreateLinksAsync(linksToCreate, AkaMsOwners, AkaMSCreatedBy, AkaMSGroupOwner, true);
+            }
         }
 
         private BlobFeedAction CreateBlobFeedAction(FeedConfig feedConfig)

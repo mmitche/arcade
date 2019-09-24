@@ -86,7 +86,7 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links.src
         /// any exist. Only if all can be created will any be created. If an existing link points to the desired target,
         /// it is not updated and there is no error (even if overwrite == false).
         /// </remarks>
-        public async Task CreateLinksAsync(List<AkaMSLink> links, string owners, string createdBy, string groupOwner, bool overwrite)
+        public async Task CreateLinksAsync(List<AkaMSLink> links, string linkOwners, string linkCreatedBy, string linkGroupOwner, bool overwrite)
         {
             using (HttpClient client = CreateClient())
             {
@@ -132,12 +132,12 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links.src
                     {
                         isVanity = !string.IsNullOrEmpty(link.ShortUrl),
                         shortUrl = link.ShortUrl,
-                        owners = _owners,
+                        owners = linkOwners,
                         targetUrl = link.TargetUrl,
-                        createdBy = _createdBy,
-                        lastModifiedBy = _createdBy,
+                        createdBy = linkCreatedBy,
+                        lastModifiedBy = linkCreatedBy,
                         description = link.Description,
-                        groupOwner = _groupOwner
+                        groupOwner = linkGroupOwner
                     };
 
                     var response = await client.PostAsync(ApiTargeturl,
@@ -156,8 +156,8 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links.src
                     var updateLink = new
                     {
                         targetUrl = link.TargetUrl,
-                        owners = _owners,
-                        lastModifiedBy = _createdBy
+                        owners = linkOwners,
+                        lastModifiedBy = linkCreatedBy
                     };
 
                     var response = await client.PutAsync($"{ApiTargeturl}/{link.ShortUrl}",
