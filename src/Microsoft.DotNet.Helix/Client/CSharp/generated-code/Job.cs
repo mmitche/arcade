@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.ComponentModel;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -49,6 +49,8 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         );
 
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        [Obsolete("This method doesn't do what you think, use 'WaitForJobAsync' instead.", true)]
         Task<Newtonsoft.Json.Linq.JToken> WaitAsync(
             string job,
             CancellationToken cancellationToken = default
@@ -217,7 +219,7 @@ namespace Microsoft.DotNet.Helix.Client
             CancellationToken cancellationToken = default
         )
         {
-            if (body == default)
+            if (body == default(JobCreationRequest))
             {
                 throw new ArgumentNullException(nameof(body));
             }
@@ -254,7 +256,7 @@ namespace Microsoft.DotNet.Helix.Client
                 }
 
                 string _requestContent = null;
-                if (body != default)
+                if (body != default(JobCreationRequest))
                 {
                     _requestContent = Client.Serialize(body);
                     _req.Content = new StringContent(_requestContent, Encoding.UTF8)

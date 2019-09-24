@@ -1244,6 +1244,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 { ".EXE", "INSTALLER" },
                 { ".SVG", "BADGE"},
                 { ".WIXLIB", "INSTALLER" },
+                { ".WIXPDB", "INSTALLER" },
                 { ".JAR", "INSTALLER" },
                 { ".VERSION", "INSTALLER"},
                 { ".SWR", "INSTALLER" }
