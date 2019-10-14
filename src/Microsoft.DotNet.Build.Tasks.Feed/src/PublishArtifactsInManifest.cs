@@ -1235,6 +1235,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 { ".ZIP", "BINARYLAYOUT" },
                 { ".MSI", "INSTALLER" },
                 { ".SHA", "CHECKSUM" },
+                { ".SHA512", "CHECKSUM" },
                 { ".POM", "MAVEN" },
                 { ".VSIX", "VSIX" },
                 { ".CAB", "BINARYLAYOUT" },
