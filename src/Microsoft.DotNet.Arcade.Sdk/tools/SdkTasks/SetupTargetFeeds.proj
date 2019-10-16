@@ -49,6 +49,7 @@
       - AzureDevOpsStaticTransportFeedKey     : Key of the Azure DevOps NuGet feed to publish to transport packages to.
       - AzureDevOpsStaticSymbolsFeed          : URL of the Azure DevOps NuGet feed to publish symbol packages to.
       - AzureDevOpsStaticSymbolsFeedKey       : Key of the Azure DevOps NuGet feed to publish to symbol packages to.
+      - LatestLinkShortUrlPrefix              : Prefix of aka.ms url's to set up latest links for each published blob.
 
       - CreateTestConfig                      : If set to true the user will be able to test a TargetFeedConfig
                                                 constructed using parameters below:
@@ -194,7 +195,7 @@
       <TargetFeedConfig
         Condition="'$(IsInternalBuild)' == 'false'"
         AssetSelection="NonShippingOnly"
-        Include="PACKAGE;SYMBOLS"
+        Include="Package;Symbols"
         TargetURL="$(TargetStaticFeed)"
         Isolated="false"
         Type="AzureStorageFeed"
@@ -319,14 +320,16 @@
         TargetURL="$(InstallersTargetStaticFeed)"
         Isolated="false"
         Type="AzureStorageFeed"
-        Token="$(InstallersAzureAccountKey)" />
+        Token="$(InstallersAzureAccountKey)"
+        LatestLinkShortUrlPrefix="$(LatestLinkShortUrlPrefix)" />
 
       <TargetFeedConfig Condition="'$(PublishInstallersAndChecksums)' == 'true'"
         Include="Checksum"
         TargetURL="$(ChecksumsTargetStaticFeed)"
         Isolated="false"
         Type="AzureStorageFeed"
-        Token="$(ChecksumsAzureAccountKey)" />
+        Token="$(ChecksumsAzureAccountKey)"
+        LatestLinkShortUrlPrefix="$(LatestLinkShortUrlPrefix)" />
 
       <TargetFeedConfig Condition="'$(PublishToAzureDevOpsNuGetFeeds)' == 'true'"
         Include="Package"

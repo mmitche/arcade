@@ -7,6 +7,7 @@ using Microsoft.DotNet.Build.CloudTestTasks;
 using Microsoft.DotNet.Deployment.Tasks.Links.src;
 using Microsoft.DotNet.Maestro.Client;
 using Microsoft.DotNet.Maestro.Client.Models;
+using Microsoft.DotNet.VersionTools.BuildManifest;
 using Microsoft.DotNet.VersionTools.BuildManifest.Model;
 using Microsoft.DotNet.VersionTools.Util;
 using NuGet.Packaging.Core;
@@ -77,10 +78,11 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         ///                                     If false, an error is thrown if an asset already exists
         ///                                     If not provided then defaults to false.
         ///                                     Azure DevOps feeds can never be overwritten.
-        /// Metadata AkaShortUrlPath (optional): If provided, AKA ms links are generated (for artifacts blobs only) that target this short
-        ///                                      url path. The link is construct as such:
-        ///                                      aka.ms/AkaShortUrlPath/BlobArtifactPath -> Target blob url
-        ///                                      If specified, then AkaMSClientId, AkaMSClientSecret and AkaMSTenant must be provided.
+        /// Metadata LatestLinkShortUrlPrefix (optional): If provided, AKA ms links are generated (for artifacts blobs only)
+        ///                                               that target this short url path. The link is construct as such:
+        ///                                               aka.ms/AkaShortUrlPath/BlobArtifactPath -> Target blob url
+        ///                                               If specified, then AkaMSClientId, AkaMSClientSecret and AkaMSTenant must be provided.
+        ///                                               The version information is stripped away from the file and blob artifact path.
         /// </summary>
         [Required]
         public ITaskItem[] TargetFeedConfig { get; set; }
@@ -338,8 +340,8 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                         feedConfig.AllowOverwrite = feedSetting;
                     }
 
-                    string akaUrlShortPath = fc.GetMetadata(nameof(FeedConfig.AkaShortUrlPath));
-                    if (!string.IsNullOrEmpty(akaUrlShortPath))
+                    string latestLinkShortUrlPrefix = fc.GetMetadata(nameof(FeedConfig.LatestLinkShortUrlPrefix));
+                    if (!string.IsNullOrEmpty(latestLinkShortUrlPrefix))
                     {
                         // Verify other inputs are provided
                         if (string.IsNullOrEmpty(AkaMSClientId) ||
@@ -351,6 +353,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                                 $"{nameof(AkaMSTenant)}, {nameof(AkaMsOwners)}, {nameof(AkaMSCreatedBy)}");
                             continue;
                         }
+                        feedConfig.LatestLinkShortUrlPrefix = latestLinkShortUrlPrefix;
                     }
 
 
@@ -1152,19 +1155,21 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
             }
 
             await blobFeedAction.PublishToFlatContainerAsync(blobs, maxClients: MaxClients, pushOptions);
+            await CreateOrUpdateLatestLinksAsync(blobsToPublish, feedConfig);
+        }
 
+        private async Task CreateOrUpdateLatestLinksAsync(List<BlobArtifactModel> blobsToPublish, FeedConfig feedConfig)
+        {
             // Update or create aka ms links if desired.
-            if (!string.IsNullOrEmpty(feedConfig.AkaShortUrlPath))
+            if (!string.IsNullOrEmpty(feedConfig.LatestLinkShortUrlPrefix))
             {
-                string targetUrlWithoutSuffix = targetFeedUrl.Remove(targetFeedUrl.Length - targetFeedUrl.Length);
-
                 Log.LogMessage(MessageImportance.High, "Creating aka.ms links for blobs:");
                 List<AkaMSLink> linksToCreate = blobsToPublish.Select(blob =>
                 {
                     AkaMSLink newLink = new AkaMSLink
                     {
-                        ShortUrl = $"{feedConfig.AkaShortUrlPath}{blob.Id}",
-                        TargetUrl = $"{targetFeedUrl}{blob.Id}"
+                        ShortUrl = GetLatestShortUrlForBlob(feedConfig, blob),
+                        TargetUrl = $"{feedConfig.TargetURL}{blob.Id}"
                     };
                     Log.LogMessage(MessageImportance.High, $"  {newLink.ShortUrl} -> {newLink.TargetUrl}");
                     return newLink;
@@ -1173,6 +1178,50 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
                 AkaMSLinkManager linkManager = new AkaMSLinkManager(AkaMSClientId, AkaMSClientSecret, AkaMSTenant);
                 await linkManager.CreateLinksAsync(linksToCreate, AkaMsOwners, AkaMSCreatedBy, AkaMSGroupOwner, true);
             }
+        }
+
+        static readonly Dictionary<string, string> SequenceToReplaceInShortUrl = new Dictionary<string, string>
+        {
+            { "//" , "/" },
+            { ".." , "." },
+            { "--" , "-" }
+        };
+
+        /// <summary>
+        ///     Get the short url for a blob.
+        /// </summary>
+        /// <param name="feedConfig">Feed configuration</param>
+        /// <param name="blob">Blob</param>
+        /// <returns>Short url prefix for the blob.</returns>
+        /// <remarks>
+        public string GetLatestShortUrlForBlob(FeedConfig feedConfig, BlobArtifactModel blob)
+        {
+            // Before attempting to get a version-less string, check for any instances double characters
+            // we might remove at the end and reject if they exist. There's not an easy way to preserve these,
+            // but remove the ones introduced by removing the versions, and these aren't found anywhere in dotnet core's
+            // assets anyways.
+            // If this becomes a problem (a bunch of valid instances), we could escape the .., // etc. prior to calling the
+            // removal method.
+
+            foreach (var sequenceToReplace in SequenceToReplaceInShortUrl)
+            {
+                if (blob.Id.Contains(sequenceToReplace.Key))
+                {
+                    Log.LogWarning($"Asset with Id {blob.Id} contains an invalid sequence of characters '{sequenceToReplace.Key}' which" +
+                        $"cannot be reliably removed when creating an aka.ms link");
+                    return null;
+                }
+            }
+
+            string blobIdWithoutVersions = VersionIdentifier.GetAssetWithoutVersions(blob.Id);
+
+            // Remove any double characters
+            foreach (var sequenceToReplace in SequenceToReplaceInShortUrl)
+            {
+                blobIdWithoutVersions = blobIdWithoutVersions.Replace(sequenceToReplace.Key, sequenceToReplace.Value);
+            }
+
+            return Path.Combine(feedConfig.LatestLinkShortUrlPrefix, blobIdWithoutVersions);
         }
 
         private BlobFeedAction CreateBlobFeedAction(FeedConfig feedConfig)
@@ -1316,8 +1365,11 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         public bool AllowOverwrite { get; set; } = false;
         /// <summary>
         /// Prefix of aka.ms links that should be generated for blobs.
-        /// Not applicable to packages.
+        /// Not applicable to packages
+        /// Generates a link the blob, stripping away any version information in the file or blob path.
+        /// E.g. 
+        ///      [LatestLinkShortUrl]/aspnetcore/Runtime/dotnet-hosting-win.exe -> aspnetcore/Runtime/3.1.0-preview2.19511.6/dotnet-hosting-3.1.0-preview2.19511.6-win.exe
         /// </summary>
-        public string AkaShortUrlPath { get; set; }
+        public string LatestLinkShortUrlPrefix { get; set; }
     }
 }
