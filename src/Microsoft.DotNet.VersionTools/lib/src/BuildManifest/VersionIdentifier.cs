@@ -46,7 +46,7 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest
             string potentialVersion = null;
             for (int i = pathSegments.Length - 1; i >= 0; i--)
             {
-                potentialVersion = GetVersion(pathSegments[i]);
+                potentialVersion = GetVersionForSingleSegment(pathSegments[i]);
                 if (potentialVersion != null)
                 {
                     break;

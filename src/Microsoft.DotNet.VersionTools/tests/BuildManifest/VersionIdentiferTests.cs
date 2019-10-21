@@ -50,7 +50,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 
             foreach (VersionIdentifierTestAsset testAsset in testAssets)
             {
-                Assert.Equal(testAsset.ExpectedVersion, VersionIdentifier.GetVersion(testAsset.Name));
+                Assert.Equal($"{testAsset.Name} has version {testAsset.ExpectedVersion}", $"{testAsset.Name} has version {VersionIdentifier.GetVersion(testAsset.Name)}");
             }
         }
 
