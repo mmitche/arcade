@@ -57,17 +57,20 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
         private List<VersionIdentifierTestAsset> GetTestAssets()
         {
             List<VersionIdentifierTestAsset> testAssets = new List<VersionIdentifierTestAsset>();
-            string[] assets = File.ReadAllLines("BuildManifest/VersionIdentifierTestsAssets.csv");
+            string[] assets = File.ReadAllLines("BuildManifest/VersionIdentifierTestsAssets-modified.csv");
 
-            foreach (string input in assets)
+            for (int line = 0; line < assets.Length; line++)
             {
+                string input = assets[line];
                 if (!string.IsNullOrEmpty(input))
                 {
                     string[] values = input.Split(',');
+                    
+                    Assert.True(values.Length == 3, $"Line {line+1} is missing version or path-without-versions info");
+
                     string name = values[0];
                     string expectedVersion = string.IsNullOrEmpty(values[1]) ? null : values[1];
-                    // string nameWithoutVersions = string.IsNullOrEmpty(values[2]) ? null : values[2];
-                    string nameWithoutVersions = null;
+                    string nameWithoutVersions = string.IsNullOrEmpty(values[2]) ? null : values[2];
                     testAssets.Add(new VersionIdentifierTestAsset(name, expectedVersion, nameWithoutVersions));
                 }
             }
