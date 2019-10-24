@@ -50,7 +50,14 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 
             foreach (VersionIdentifierTestAsset testAsset in testAssets)
             {
-                Assert.Equal($"{testAsset.Name} has version {testAsset.ExpectedVersion}", $"{testAsset.Name} has version {VersionIdentifier.GetVersion(testAsset.Name)}");
+                // First check whether the original version number can be identified
+                string expectedVersion = testAsset.ExpectedVersion;
+                string actualVersion = VersionIdentifier.GetVersion(testAsset.Name);
+                Assert.True(expectedVersion == actualVersion, $"Line {testAsset.Line} has incorrect computed version {actualVersion}");
+                // Then check that all versions can be removed from the path of any blob asset
+                string expectedNameWithoutVersions = testAsset.NameWithoutVersions;
+                string actualNameWithoutVersions = VersionIdentifier.RemoveVersions(testAsset.Name);
+                Assert.True(expectedNameWithoutVersions == actualNameWithoutVersions, $"Line {testAsset.Line} has incorrect asset name with versions removed {actualNameWithoutVersions}");
             }
         }
 
@@ -59,19 +66,19 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
             List<VersionIdentifierTestAsset> testAssets = new List<VersionIdentifierTestAsset>();
             string[] assets = File.ReadAllLines("BuildManifest/VersionIdentifierTestsAssets-modified.csv");
 
-            for (int line = 0; line < assets.Length; line++)
+            for (int i = 0; i < assets.Length; i++)
             {
-                string input = assets[line];
-                if (!string.IsNullOrEmpty(input))
+                string line = assets[i];
+                if (!string.IsNullOrEmpty(line))
                 {
-                    string[] values = input.Split(',');
+                    string[] elements = line.Split(',');
                     
-                    Assert.True(values.Length == 3, $"Line {line+1} is missing version or path-without-versions info");
+                    Assert.True(elements.Length == 3, $"Line {i+1} is missing version or path-without-versions info");
 
-                    string name = values[0];
-                    string expectedVersion = string.IsNullOrEmpty(values[1]) ? null : values[1];
-                    string nameWithoutVersions = string.IsNullOrEmpty(values[2]) ? null : values[2];
-                    testAssets.Add(new VersionIdentifierTestAsset(name, expectedVersion, nameWithoutVersions));
+                    string name = elements[0];
+                    string expectedVersion = string.IsNullOrEmpty(elements[1]) ? null : elements[1];
+                    string nameWithoutVersions = string.IsNullOrEmpty(elements[2]) ? null : elements[2];
+                    testAssets.Add(new VersionIdentifierTestAsset(name, expectedVersion, nameWithoutVersions, i + 1));
                 }
             }
 

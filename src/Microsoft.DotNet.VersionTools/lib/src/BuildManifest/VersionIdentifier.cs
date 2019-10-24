@@ -27,7 +27,7 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest
 
         private const string _finalSuffix = "final";
 
-        private static readonly char[] _delimiters = new char[] { '.', '-' };
+        private static readonly char[] _delimiters = new char[] { '.', '-', '_' };
 
         /// <summary>
         /// Identify the version of an asset.
@@ -179,6 +179,47 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest
             return $"{majorMinorPatch}{versionSuffix.ToString()}";
         }
 
+        private static readonly Dictionary<string, string> sequencesToReplace =
+            new Dictionary<string, string>
+            {
+                { "-.", "." },
+                { "..", "." },
+                { "--", "-" },
+                { "//", "/" }
+            };
 
+        /// <summary>
+        ///     Given an asset version, remove all .NET Core version numers (as defined by the version identifier above)_ from the 
+        /// </summary>
+        /// <param name="assetName">Asset</param>
+        /// <returns>Asset name without versions</returns>
+        public static string RemoveVersions(string assetName)
+        {
+            string[] pathSegments = assetName.Split('/');
+            
+            // Remove the version number from each segment, then join back together and
+            // remove any useless character sequences.
+
+            for (int i = 0; i < pathSegments.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(pathSegments[i]))
+                {
+                    string versionForSegment = GetVersionForSingleSegment(pathSegments[i]);
+                    if (versionForSegment != null)
+                    {
+                        pathSegments[i] = pathSegments[i].Replace(versionForSegment, "");
+                    }
+                }
+            }
+
+            string assetWithoutVersions = string.Join("/", pathSegments);
+
+            foreach (var sequence in sequencesToReplace)
+            {
+                assetWithoutVersions = assetWithoutVersions.Replace(sequence.Key, sequence.Value);
+            }
+
+            return assetWithoutVersions;
+        }
     }
 }

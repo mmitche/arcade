@@ -6,12 +6,15 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 {
     public class VersionIdentifierTestAsset
     {
-        public VersionIdentifierTestAsset(string name, string expectedVersion, string nameWithoutVersions)
+        public VersionIdentifierTestAsset(string name, string expectedVersion, string nameWithoutVersions, int line)
         {
             Name = name;
             ExpectedVersion = expectedVersion;
             NameWithoutVersions = nameWithoutVersions;
+            Line = line;
         }
+
+        public int Line { get; set; }
 
         public string Name { get; set; }
 
