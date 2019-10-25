@@ -2,11 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using Microsoft.DotNet.VersionTools.Util;
-using NuGet.ContentModel;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -36,6 +33,7 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest
         /// - Blobs that include the full path
         /// - Packages that do not include any path elements.
         /// 
+        /// There may be multiple different version numbers in a blob path.
         /// This method starts at the last segment of the path and works backward to find a version number.
         /// </summary>
         /// <param name="assetName">Asset name</param>
@@ -59,17 +57,17 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest
         /// <summary>
         /// Identify the version number of an asset segment.
         /// </summary>
-        /// <param name="assetName">Asset Name</param>
+        /// <param name="assetSegment">Asset segment</param>
         /// <returns>Version number, or null if none was found</returns>
         /// <remarks>
-        /// This is particularly error prone. To constrain the problem, we apply the following assumptions
-        /// which are valid for .NET Core:
+        /// Identifying versions is not particularly easy. To constrain the problem, we apply the following assumptions
+        /// which are generally valid for .NET Core.
         /// - We always have major.minor.patch, and it always begins the version string.
         /// - The only pre-release or build metadata labels we use begin with the _knownTags shown above.
         /// - We use additional numbers in our version numbers after the initial major.minor.patch, but any non-numeric element will end the version string
-        /// - The delimiters we use in versions and file names are just . and -.
+        /// - The delimiters we use in versions and file names are ., -, and _.
         /// </remarks>
-        private static string GetVersionForSingleSegment(string assetName)
+        private static string GetVersionForSingleSegment(string assetSegment)
         {
 
             // Find the start of the version number by finding the major.minor.patch.
@@ -89,15 +87,15 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest
             {
                 string nextSegment;
                 prevDelimiterCharacter = nextDelimiterCharacter;
-                int nextDelimiterIndex = assetName.IndexOfAny(_delimiters, currentIndex);
+                int nextDelimiterIndex = assetSegment.IndexOfAny(_delimiters, currentIndex);
                 if (nextDelimiterIndex != -1)
                 {
-                    nextDelimiterCharacter = assetName[nextDelimiterIndex];
-                    nextSegment = assetName.Substring(currentIndex, nextDelimiterIndex - currentIndex);
+                    nextDelimiterCharacter = assetSegment[nextDelimiterIndex];
+                    nextSegment = assetSegment.Substring(currentIndex, nextDelimiterIndex - currentIndex);
                 }
                 else
                 {
-                    nextSegment = assetName.Substring(currentIndex, assetName.Length - currentIndex);
+                    nextSegment = assetSegment.Substring(currentIndex, assetSegment.Length - currentIndex);
                 }
 
                 // If we have not yet found the major/minor/patch, then there are four cases:
@@ -185,11 +183,13 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest
                 { "-.", "." },
                 { "..", "." },
                 { "--", "-" },
-                { "//", "/" }
+                { "//", "/" },
+                { "_.", "." }
             };
 
         /// <summary>
-        ///     Given an asset version, remove all .NET Core version numers (as defined by the version identifier above)_ from the 
+        ///     Given an asset name, remove all .NET Core version numers (as defined by the version identifier above)
+        ///     from the string
         /// </summary>
         /// <param name="assetName">Asset</param>
         /// <returns>Asset name without versions</returns>

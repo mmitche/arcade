@@ -64,7 +64,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
         private List<VersionIdentifierTestAsset> GetTestAssets()
         {
             List<VersionIdentifierTestAsset> testAssets = new List<VersionIdentifierTestAsset>();
-            string[] assets = File.ReadAllLines("BuildManifest/VersionIdentifierTestsAssets-modified.csv");
+            string[] assets = File.ReadAllLines("BuildManifest/VersionIdentifierTestsAssets.csv");
 
             for (int i = 0; i < assets.Length; i++)
             {
