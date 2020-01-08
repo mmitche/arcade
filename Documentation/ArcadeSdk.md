@@ -1,4 +1,4 @@
-# Arcade SDK
+﻿# Arcade SDK
 
 Arcade SDK is a set of msbuild props and targets files and packages that provide common build features used across multiple repos, such as CI integration, packaging, VSIX and VS setup authoring, testing, and signing via Microbuild.
 
@@ -53,6 +53,8 @@ artifacts
         $(VsixPackageId).vsmand
         $(VsixContainerName).vsix
         $(VisualStudioInsertionComponent).vsman
+      DevDivPackages
+        $(MSBuildProjectName).$(PackageVersion).nupkg
       $(VsixPackageId).json
       $(VsixContainerName).vsix
   VSSetup.obj
@@ -274,6 +276,8 @@ Properties:
 
 See [Signing.md](https://github.com/dotnet/arcade/blob/master/Documentation/CorePackages/Signing.md#arguments-metadata) for details.
 
+To change the key used for strong-naming assemblies see `StrongNameKeyId` property.
+
 ### /eng/Publishing.props (optional)
 
 Customization of publishing process.
@@ -340,6 +344,19 @@ The version of `RoslynTools.MSBuild` package can be specified in `global.json` f
 ```
 
 If it is not specified the build script attempts to find `RoslynTools.MSBuild` version `{VSMajor}.{VSMinor}.0-alpha` where `VSMajor.VSMinor` is the value of `tools.vs.version`.
+
+If the fallback behavior to use xcopy-deployable MSBuild package is not desirable, then a version of `none` should be indicated in `global.json`, like this: 
+
+```json
+{
+  "tools": {
+    "vs": {
+      "version": "16.4"
+    },
+    "xcopy-msbuild": "none"
+  }
+}
+```
 
 #### Example: Restoring multiple .NET Core Runtimes for running tests
 
@@ -431,6 +448,11 @@ It is a common practice to specify properties applicable to all (most) projects 
       Use PackageLicenseExpressionInternal for closed-source licenses.
     -->
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    
+    <!--
+      Specify an id of the key used to generate strong names of assemblies built from this repo.
+    -->
+    <StrongNameKeyId>Microsoft</StrongNameKeyId>
   </PropertyGroup>
 </Project>
 ```
@@ -857,6 +879,14 @@ build -configuration Release -restore -ci /p:EnableNgenOptimization=true /p:Repo
 ### `SemanticVersioningV1` (bool)
 
 `true` if `Version` needs to respect SemVer 1.0. Default is `false`, which means format following SemVer 2.0.
+
+### `StrongNameKeyId` (string)
+
+The id of the key used to generate assembly strong name for signed assemblies (`SignAssembly` is `true`).
+By default, `SignAssembly` is set to `true` and `StrongNameKeyId` is set to `MicrosoftShared`.
+Available values are listed in [StrongName.targets](https://github.com/dotnet/arcade/blob/master/src/Microsoft.DotNet.Arcade.Sdk/tools/StrongName.targets).
+
+`AssemblyOriginatorKeyFile`, `PublicKey`, `PublicKeyToken`, `DelaySign`, `PublicSign` properties are set based on the value of `StrongNameKeyId`.
 
 ### `IsShipping`, `IsShippingAssembly`, `IsShippingPackage`, `IsShippingVsix` (bool)
 

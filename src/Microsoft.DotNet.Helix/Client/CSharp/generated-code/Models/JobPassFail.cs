@@ -27,7 +27,7 @@ namespace Microsoft.DotNet.Helix.Client.Models
         {
             get
             {
-                if (Failed == default(ImmutableList<string>))
+                if (Failed == default(IImmutableList<string>))
                 {
                     return false;
                 }
