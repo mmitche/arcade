@@ -19,7 +19,6 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -1159,13 +1158,13 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
 
                 Asset assetWithLocations = await client.Assets.GetAssetAsync(assetRecord.Id);
 
-                if (assetWithLocations?.Locations.Any(al => al.Location.Equals(targetFeedUrl, StringComparison.OrdinalIgnoreCase)) ?? false)
+                if (assetWithLocations?.Locations.Any(al => al.Location.Equals(feedConfig.TargetURL, StringComparison.OrdinalIgnoreCase)) ?? false)
                 {
-                    Log.LogMessage($"Asset with Id {blob.Id} already has location {targetFeedUrl}");
+                    Log.LogMessage($"Asset with Id {blob.Id} already has location {feedConfig.TargetURL}");
                     continue;
                 }
 
-                await client.Assets.AddAssetLocationToAssetAsync(assetRecord.Id, AddAssetLocationToAssetAssetLocationType.Container, targetFeedUrl);
+                await client.Assets.AddAssetLocationToAssetAsync(assetRecord.Id, AddAssetLocationToAssetAssetLocationType.Container, feedConfig.TargetURL);
             }
 
             await blobFeedAction.PublishToFlatContainerAsync(blobs, maxClients: MaxClients, pushOptions);
@@ -1194,13 +1193,6 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
             }
         }
 
-        static readonly Dictionary<string, string> SequenceToReplaceInShortUrl = new Dictionary<string, string>
-        {
-            { "//" , "/" },
-            { ".." , "." },
-            { "--" , "-" }
-        };
-
         /// <summary>
         ///     Get the short url for a blob.
         /// </summary>
@@ -1210,30 +1202,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         /// <remarks>
         public string GetLatestShortUrlForBlob(FeedConfig feedConfig, BlobArtifactModel blob)
         {
-            // Before attempting to get a version-less string, check for any instances double characters
-            // we might remove at the end and reject if they exist. There's not an easy way to preserve these,
-            // but remove the ones introduced by removing the versions, and these aren't found anywhere in dotnet core's
-            // assets anyways.
-            // If this becomes a problem (a bunch of valid instances), we could escape the .., // etc. prior to calling the
-            // removal method.
-
-            foreach (var sequenceToReplace in SequenceToReplaceInShortUrl)
-            {
-                if (blob.Id.Contains(sequenceToReplace.Key))
-                {
-                    Log.LogWarning($"Asset with Id {blob.Id} contains an invalid sequence of characters '{sequenceToReplace.Key}' which" +
-                        $"cannot be reliably removed when creating an aka.ms link");
-                    return null;
-                }
-            }
-
-            string blobIdWithoutVersions = VersionIdentifier.GetAssetWithoutVersions(blob.Id);
-
-            // Remove any double characters
-            foreach (var sequenceToReplace in SequenceToReplaceInShortUrl)
-            {
-                blobIdWithoutVersions = blobIdWithoutVersions.Replace(sequenceToReplace.Key, sequenceToReplace.Value);
-            }
+            string blobIdWithoutVersions = VersionIdentifier.RemoveVersions(blob.Id);
 
             return Path.Combine(feedConfig.LatestLinkShortUrlPrefix, blobIdWithoutVersions);
         }
