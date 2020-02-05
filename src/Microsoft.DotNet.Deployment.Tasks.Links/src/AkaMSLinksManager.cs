@@ -142,7 +142,7 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links.src
 
                     var response = await client.PostAsync(ApiTargeturl,
                         new StringContent(JsonConvert.SerializeObject(newLink), Encoding.UTF8, "application/json"));
-                    
+
                     if (response.StatusCode != System.Net.HttpStatusCode.Created)
                     {
                         throw new Exception($"Error creating aka.ms/{link.ShortUrl}->{link.TargetUrl} link: {response.Content.ReadAsStringAsync().Result}");

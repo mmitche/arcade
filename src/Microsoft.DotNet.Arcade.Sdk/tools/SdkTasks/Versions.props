@@ -20,6 +20,7 @@
       https://dotnetfeed.blob.core.windows.net/dotnet-core/index.json;
       https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-tools/nuget/v3/index.json;
       https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json;
+      D:\enlistments\arcade\artifacts\packages\Debug\NonShipping\;
     </RestoreAdditionalProjectSources>
   </PropertyGroup>
 
