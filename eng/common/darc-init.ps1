@@ -24,14 +24,16 @@ function InstallDarcCli ($darcVersion) {
     $darcVersion = $(Invoke-WebRequest -Uri $versionEndpoint -UseBasicParsing).Content
   }
 
-  $arcadeServicesSource = 'https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-tools/nuget/v3/index.json'
+  $arcadeServicesSource = 'https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-eng/nuget/v3/index.json'
 
   Write-Host "Installing Darc CLI version $darcVersion..."
   Write-Host 'You may need to restart your command window if this is the first dotnet tool you have installed.'
   if (-not $toolpath) {
-    & "$dotnet" tool install $darcCliPackageName --version $darcVersion --add-source "$arcadeServicesSource" -v $verbosity -g --framework netcoreapp2.1
+    Write-Host "'$dotnet' tool install $darcCliPackageName --version $darcVersion --add-source '$arcadeServicesSource' -v $verbosity -g"
+    & "$dotnet" tool install $darcCliPackageName --version $darcVersion --add-source "$arcadeServicesSource" -v $verbosity -g
   }else {
-    & "$dotnet" tool install $darcCliPackageName --version $darcVersion --add-source "$arcadeServicesSource" -v $verbosity --tool-path "$toolpath" --framework netcoreapp2.1
+    Write-Host "'$dotnet' tool install $darcCliPackageName --version $darcVersion --add-source '$arcadeServicesSource' -v $verbosity -g --tool-path '$toolpath'"
+    & "$dotnet" tool install $darcCliPackageName --version $darcVersion --add-source "$arcadeServicesSource" -v $verbosity --tool-path "$toolpath"
   }
 }
 
