@@ -5,6 +5,7 @@
 using Microsoft.Build.Framework;
 using Microsoft.DotNet.Deployment.Tasks.Links.src;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace Microsoft.DotNet.Deployment.Tasks.Links
@@ -27,8 +28,8 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links
         {
             try
             {
-                AkaMSLinkManager manager = new AkaMSLinkManager(ClientId, ClientSecret, Tenant);
-                await manager.DeleteLinksAsync(ShortUrls);
+                AkaMSLinkManager manager = new AkaMSLinkManager(ClientId, ClientSecret, Tenant, Log);
+                await manager.DeleteLinksAsync(new List<string>(ShortUrls));
             }
             catch (Exception e)
             {

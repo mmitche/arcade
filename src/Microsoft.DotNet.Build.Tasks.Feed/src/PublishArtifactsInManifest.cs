@@ -1117,19 +1117,24 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
             // Update or create aka ms links if desired.
             if (!string.IsNullOrEmpty(feedConfig.LatestLinkShortUrlPrefix))
             {
-                Log.LogMessage(MessageImportance.High, "Creating aka.ms links for blobs:");
+                Log.LogMessage(MessageImportance.High, "The following aka.ms links for blobs will be created:");
                 List<AkaMSLink> linksToCreate = blobsToPublish.Select(blob =>
                 {
+                    // Strip away the feed expected suffix (index.json) and append on the
+                    // blob path.
+                    string actualTargetUrl = feedConfig.TargetURL.Substring(0,
+                        feedConfig.TargetURL.Length - FeedExpectedSuffix.Length) + blob.Id;
+
                     AkaMSLink newLink = new AkaMSLink
                     {
                         ShortUrl = GetLatestShortUrlForBlob(feedConfig, blob),
-                        TargetUrl = $"{feedConfig.TargetURL}{blob.Id}"
+                        TargetUrl = actualTargetUrl
                     };
                     Log.LogMessage(MessageImportance.High, $"  {newLink.ShortUrl} -> {newLink.TargetUrl}");
                     return newLink;
                 }).ToList();
 
-                AkaMSLinkManager linkManager = new AkaMSLinkManager(AkaMSClientId, AkaMSClientSecret, AkaMSTenant);
+                AkaMSLinkManager linkManager = new AkaMSLinkManager(AkaMSClientId, AkaMSClientSecret, AkaMSTenant, Log);
                 await linkManager.CreateLinksAsync(linksToCreate, AkaMsOwners, AkaMSCreatedBy, AkaMSGroupOwner, true);
             }
         }
@@ -1145,7 +1150,7 @@ namespace Microsoft.DotNet.Build.Tasks.Feed
         {
             string blobIdWithoutVersions = VersionIdentifier.RemoveVersions(blob.Id);
 
-            return Path.Combine(feedConfig.LatestLinkShortUrlPrefix, blobIdWithoutVersions);
+            return Path.Combine(feedConfig.LatestLinkShortUrlPrefix, blobIdWithoutVersions).Replace("\\", "/");
         }
 
         private BlobFeedAction CreateBlobFeedAction(FeedConfig feedConfig)

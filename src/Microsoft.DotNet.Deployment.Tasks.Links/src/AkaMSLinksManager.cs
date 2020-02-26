@@ -2,7 +2,9 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using Microsoft.Build.Framework;
 using Microsoft.IdentityModel.Clients.ActiveDirectory;
+using Microsoft.DotNet.VersionTools.Util;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
@@ -11,6 +13,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using System.Net;
 
 namespace Microsoft.DotNet.Deployment.Tasks.Links.src
 {
@@ -39,17 +42,21 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links.src
         private const string ApiBaseUrl = "https://redirectionapi.trafficmanager.net/api/aka";
         private const string Endpoint = "https://microsoft.onmicrosoft.com/redirectionapi";
         private const string Authority = "https://login.microsoftonline.com/72f988bf-86f1-41af-91ab-2d7cd011db47/oauth2/authorize";
+        private const int BulkApiBatchSize = 300;
 
         private string _clientId;
         private string _clientSecret;
         private string _tenant;
         private string ApiTargeturl { get => $"{ApiBaseUrl}/1/{_tenant}"; }
 
-        public AkaMSLinkManager(string clientId, string clientSecret, string tenant)
+        private Microsoft.Build.Utilities.TaskLoggingHelper _log;
+
+        public AkaMSLinkManager(string clientId, string clientSecret, string tenant, Microsoft.Build.Utilities.TaskLoggingHelper log)
         {
             _clientId = clientId;
             _clientSecret = clientSecret;
             _tenant = tenant;
+            _log = log;
         }
 
         /// <summary>
@@ -57,21 +64,53 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links.src
         /// </summary>
         /// <param name="linksToDelete">Links to delete. Should not be prefixed with 'aka.ms'</param>
         /// <returns>Async task</returns>
-        public async Task DeleteLinksAsync(IEnumerable<string> linksToDelete)
+        public async Task DeleteLinksAsync(List<string> linksToDelete)
         {
+            var retryHandler = new ExponentialRetry
+            {
+                MaxAttempts = 5
+            };
+
             using (HttpClient client = CreateClient())
             {
-                await Task.WhenAll(linksToDelete.Select(async link =>
+                // The links should be divided into BulkApiBatchSize element chunks
+                var currentElement = 0;
+                var batchOfLinksToDelete = linksToDelete.Skip(currentElement).Take(BulkApiBatchSize).ToList();
+
+                while (batchOfLinksToDelete.Count > 0)
                 {
-                    var response = await client.DeleteAsync($"{ApiTargeturl}/{link}");
-                    // Success if it's 202, 204, 404
-                    if (response.StatusCode != System.Net.HttpStatusCode.NoContent &&
-                        response.StatusCode != System.Net.HttpStatusCode.NotFound &&
-                        response.StatusCode != System.Net.HttpStatusCode.Accepted)
+                    bool success = await retryHandler.RunAsync(async attempt =>
                     {
-                        throw new Exception($"Failed to delete aka.ms/{link}: {response.Content.ReadAsStringAsync().Result}");
-                    }
-                }));
+                        // Use the bulk deletion API. The bulk APIs only work for up to 300 items per call.
+                        // So batch
+                        var response = await client.PutAsync($"{ApiTargeturl}/deactivate/bulk",
+                            new StringContent(JsonConvert.SerializeObject(linksToDelete), Encoding.UTF8, "application/json"));
+
+                        // 400, 401, and 403 indicate auth failure or bad requests that should not be retried.
+                        // Check for auth failures/bad request on POST (400, 401, and 403)
+                        if (response.StatusCode == HttpStatusCode.BadRequest ||
+                            response.StatusCode == HttpStatusCode.Unauthorized ||
+                            response.StatusCode == HttpStatusCode.Forbidden)
+                        {
+                            _log.LogError($"Error deleting aka.ms links: {response.StatusCode}");
+                            return true;
+                        }
+
+                        // Success if it's 202, 204, 404
+                        if (response.StatusCode != System.Net.HttpStatusCode.NoContent &&
+                            response.StatusCode != System.Net.HttpStatusCode.NotFound &&
+                            response.StatusCode != System.Net.HttpStatusCode.Accepted)
+                        {
+                            _log.LogMessage(MessageImportance.High, $"Failed to delete aka.ms links: {response.Content.ReadAsStringAsync().Result}");
+                            return false;
+                        }
+
+                        return true;
+                    });
+
+                    currentElement += BulkApiBatchSize;
+                    batchOfLinksToDelete = linksToDelete.Skip(currentElement).Take(BulkApiBatchSize).ToList();
+                }
             }
         }
 
@@ -88,69 +127,136 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links.src
         /// </remarks>
         public async Task CreateLinksAsync(List<AkaMSLink> links, string linkOwners, string linkCreatedBy, string linkGroupOwner, bool overwrite)
         {
+            var retryHandler = new ExponentialRetry
+            {
+                MaxAttempts = 5
+            };
+
             using (HttpClient client = CreateClient())
             {
-                // Final of links that need creation. If existing links point to the same place,
-                // then links 
+                // Final of links that need creation or update. If existing links point to the same place,
+                // then no change is made. We need to bucket and determine whether we need to update or
+                // create the links
                 ConcurrentBag<AkaMSLink> linksToCreate = new ConcurrentBag<AkaMSLink>();
                 ConcurrentBag<AkaMSLink> linksToUpdate = new ConcurrentBag<AkaMSLink>();
 
-                await Task.WhenAll(linksToCreate.Select(async link =>
+                /*await Task.WhenAll(links.Select(async link =>
                 {
-                    HttpResponseMessage existsCheck = await client.GetAsync($"{ApiTargeturl}/{link.ShortUrl}");
-                    if (existsCheck.StatusCode != System.Net.HttpStatusCode.NotFound)
+                    bool success = await retryHandler.RunAsync(async attempt =>
                     {
-                        if (!existsCheck.IsSuccessStatusCode)
+                        HttpResponseMessage existsCheck = await client.GetAsync($"{ApiTargeturl}/{link.ShortUrl}");
+                        if (existsCheck.StatusCode != HttpStatusCode.NotFound)
                         {
-                            throw new Exception($"aka.ms GET api returned unexpected result: {existsCheck.Content.ReadAsStringAsync().Result}");
-                        }
-
-                        var existingLink = Newtonsoft.Json.Linq.JObject.Parse(existsCheck.Content.ReadAsStringAsync().Result);
-                        if ((string)existingLink["targetUrl"] != link.TargetUrl)
-                        {
-                            if (overwrite)
+                            // Retry on anything but auth failures. GET can retrurn 401 and 403
+                            if (existsCheck.StatusCode == HttpStatusCode.Unauthorized || 
+                                existsCheck.StatusCode == HttpStatusCode.Forbidden)
                             {
-                                linksToUpdate.Add(link);
+                                _log.LogError($"Failed to determine whether {link.ShortUrl} exists: {existsCheck.StatusCode}");
+                                return true;
+                            }
+
+                            // Otherwise, we retry on other failure codes.
+                            if (!existsCheck.IsSuccessStatusCode)
+                            {
+                                _log.LogMessage(MessageImportance.High, $"Unable to determine whether {link.ShortUrl} exists, GET {ApiTargeturl}/{link.ShortUrl} returned {existsCheck.StatusCode}. Retrying");
+                                return false;
+                            }
+
+                            var existingLink = Newtonsoft.Json.Linq.JObject.Parse(existsCheck.Content.ReadAsStringAsync().Result);
+                            if ((string)existingLink["targetUrl"] != link.TargetUrl)
+                            {
+                                if (overwrite)
+                                {
+                                    linksToUpdate.Add(link);
+                                }
+                                else
+                                {
+                                    // Will not overwrite an existing link that does not already point to the target location. Fatal error,
+                                    // but no retry
+                                    _log.LogError($"aka.ms/{link.ShortUrl} exists but doesn't target {link.TargetUrl}, skipping update.");
+                                }
                             }
                             else
                             {
-                                // Will not overwrite an existing link that does not already point to the target location
-                                throw new Exception($"aka.ms/{link.ShortUrl} exists but doesn't target {link.TargetUrl}, skipping update.");
+                                _log.LogMessage(MessageImportance.High, $"Not changing link aka.ms/{link.ShortUrl}->{link.TargetUrl} (up to date)");
                             }
                         }
-                    }
-                    else
-                    {
-                        linksToCreate.Add(link);
-                    }
-                }));
+                        else
+                        {
+                            linksToCreate.Add(link);
+                        }
 
-                // Now create all new links
-                await Task.WhenAll(linksToCreate.Select(async link =>
+                        return true;
+                    });
+
+                    if (!success)
+                    {
+                        _log.LogError($"Failed to create aka.ms link {link.ShortUrl}->{link.TargetUrl}");
+                    }
+                }));*/
+
+                // The links should be divided into BulkApiBatchSize element chunks
+                var currentElement = 0;
+                var batchOfLinksToCreate = links.Skip(currentElement).Take(BulkApiBatchSize).ToList();
+
+                while (batchOfLinksToCreate.Count > 0)
                 {
-                    var newLink = new
+                    // Now create all new links
+                    var newLinks = batchOfLinksToCreate.Select(link =>
                     {
-                        isVanity = !string.IsNullOrEmpty(link.ShortUrl),
-                        shortUrl = link.ShortUrl,
-                        owners = linkOwners,
-                        targetUrl = link.TargetUrl,
-                        createdBy = linkCreatedBy,
-                        lastModifiedBy = linkCreatedBy,
-                        description = link.Description,
-                        groupOwner = linkGroupOwner
-                    };
+                        return new
+                        {
+                            // isVanity = !string.IsNullOrEmpty(link.ShortUrl),
+                            shortUrl = link.ShortUrl,
+                            owners = linkOwners,
+                            targetUrl = link.TargetUrl,
+                            // createdBy = linkCreatedBy,
+                            lastModifiedBy = linkCreatedBy,
+                            description = link.Description,
+                            groupOwner = linkGroupOwner
+                        };
+                    });
 
-                    var response = await client.PostAsync(ApiTargeturl,
-                        new StringContent(JsonConvert.SerializeObject(newLink), Encoding.UTF8, "application/json"));
+                    string newLinksJson = JsonConvert.SerializeObject(newLinks);
 
-                    if (response.StatusCode != System.Net.HttpStatusCode.Created)
+                    bool success = await retryHandler.RunAsync(async attempt =>
                     {
-                        throw new Exception($"Error creating aka.ms/{link.ShortUrl}->{link.TargetUrl} link: {response.Content.ReadAsStringAsync().Result}");
+                        _log.LogMessage(MessageImportance.High, $"Creating/Updating {batchOfLinksToCreate.Count} aka.ms links with body: {newLinksJson}");
+
+                        var response = await client.PutAsync($"{ApiTargeturl}/bulk",
+                            new StringContent(newLinksJson, Encoding.UTF8, "application/json"));
+
+                        // Check for auth failures/bad request on POST (400, 401, and 403)
+                        if (response.StatusCode == HttpStatusCode.BadRequest ||
+                            response.StatusCode == HttpStatusCode.Unauthorized ||
+                            response.StatusCode == HttpStatusCode.Forbidden)
+                        {
+                            _log.LogError($"Error creating aka.ms links: {response.StatusCode}");
+                            return true;
+                        }
+
+                        if (response.StatusCode != System.Net.HttpStatusCode.Accepted &&
+                            response.StatusCode != System.Net.HttpStatusCode.NoContent &&
+                            response.StatusCode != System.Net.HttpStatusCode.NotFound)
+                        {
+                            _log.LogMessage(MessageImportance.High, $"Failed to create aka.ms links: {response.Content.ReadAsStringAsync().Result}");
+                            return false;
+                        }
+
+                        return true;
+                    });
+
+                    if (!success)
+                    {
+                        _log.LogError($"Failed to create aka.ms links");
                     }
-                }));
+
+                    currentElement += BulkApiBatchSize;
+                    batchOfLinksToCreate = links.Skip(currentElement).Take(BulkApiBatchSize).ToList();
+                }
 
                 // And update existing ones
-                await Task.WhenAll(linksToUpdate.Select(async link =>
+                /*await Task.WhenAll(linksToUpdate.Select(async link =>
                 {
                     // Create the POST body
                     var updateLink = new
@@ -159,18 +265,37 @@ namespace Microsoft.DotNet.Deployment.Tasks.Links.src
                         owners = linkOwners,
                         lastModifiedBy = linkCreatedBy
                     };
+                    var updateLinkJson = JsonConvert.SerializeObject(updateLink);
 
-                    var response = await client.PutAsync($"{ApiTargeturl}/{link.ShortUrl}",
-                        new StringContent(JsonConvert.SerializeObject(updateLink), Encoding.UTF8, "application/json"));
-
-                    // Supposedly 404 is a successful status code for an update (link not found), but that seems really
-                    // odd so it is excluded from the valid status codes.
-                    if (response.StatusCode != System.Net.HttpStatusCode.Accepted &&
-                        response.StatusCode != System.Net.HttpStatusCode.NoContent)
+                    bool success = await retryHandler.RunAsync(async attempt =>
                     {
-                        throw new Exception($"Error updating aka.ms/{link.ShortUrl}->{link.TargetUrl} link: {response.Content.ReadAsStringAsync().Result}");
-                    }
-                }));
+                        _log.LogMessage(MessageImportance.High, $"Error updating link aka.ms/{link.ShortUrl}->{link.TargetUrl}");
+
+                        var response = await client.PutAsync($"{ApiTargeturl}/{link.ShortUrl}",
+                            new StringContent(updateLinkJson, Encoding.UTF8, "application/json"));
+
+                        // Check for auth failures/bad request on PUT (400, 401, and 403)
+                        // Retry on anything but auth failures. GET can retrurn 400, 401 and 403
+                        if (response.StatusCode == HttpStatusCode.BadRequest ||
+                            response.StatusCode == HttpStatusCode.Unauthorized ||
+                            response.StatusCode == HttpStatusCode.Forbidden)
+                        {
+                            _log.LogError($"Error updating aka.ms/{link.ShortUrl}->{link.TargetUrl} link: {response.StatusCode}");
+                            return true;
+                        }
+
+                        // Supposedly 404 is a successful status code for an update (link not found), but that seems really
+                        // odd so it is excluded from the valid status codes.
+                        if (response.StatusCode != System.Net.HttpStatusCode.Accepted &&
+                            response.StatusCode != System.Net.HttpStatusCode.NoContent)
+                        {
+                            _log.LogMessage(MessageImportance.High, $"Failed to create aka.ms/{link.ShortUrl}->{link.TargetUrl} link: {response.Content.ReadAsStringAsync().Result}");
+                            return false;
+                        }
+
+                        return true;
+                    });
+                }));*/
             }
         }
 
