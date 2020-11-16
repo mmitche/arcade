@@ -20,6 +20,30 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
             _output = output;
         }
 
+        /// <summary>
+        /// Given a set of file sign extension infos that conflict,
+        /// ToXml should throw with an appropriate error message.
+        /// </summary>
+        [Theory]
+        [InlineData]
+        public void ManifestModelToXmlFailsOnConflictingFileExtensionSignInfos(List<(string, string)> infos, List<string> conflictingExtensions)
+        {
+            const string uri = 
+            FileExtensionSignInfoModel[] models = new FileExtensionSignInfoModel[]
+            {
+                new FileExtensionSignInfoModel() { Include = ".ps1", CertificateName = "Foo" },
+                new FileExtensionSignInfoModel() { Include = ".ps1", CertificateName = "Foo2" }
+            }
+
+            
+        }
+
+        [Fact]
+        public void ManifestModelFromXmlFailsOnInvalidFileExtensionSignInfos()
+        {
+
+        }
+
         [Fact]
         public void TestExampleBuildManifestRoundtrip()
         {

@@ -65,21 +65,25 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
                 .CreateXmlAttributes(RequiredAttributes),
             Enumerable.Concat(
                 FileExtensionSignInfo
+                    .ThrowIfConflictingFileExtensionSignInfo()
                     .OrderBy(fe => fe.Include, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(fe => fe.CertificateName, StringComparer.OrdinalIgnoreCase)
                     .Select(fe => fe.ToXml()),
                 FileSignInfo
+                    .ThrowIfConflictingFileSignInfo()
                     .OrderBy(f => f.Include, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.CertificateName, StringComparer.OrdinalIgnoreCase)
                     .Select(f => f.ToXml()))
             .Concat(CertificatesSignInfo
+                .ThrowIfConflictingCertificateSignInfo()
                 .OrderBy(f => f.Include, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(f => f.DualSigningAllowed, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(f => f.DualSigningAllowed)
                 .Select(f => f.ToXml()))
             .Concat(ItemsToSign
                 .OrderBy(i => i.Include, StringComparer.OrdinalIgnoreCase)
                 .Select(i => i.ToXml()))
             .Concat(StrongNameSignInfo
+                .ThrowIfConflictingStrongNameSignInfo()
                 .OrderBy(s => s.Include, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(s => s.PublicKeyToken, StringComparer.OrdinalIgnoreCase)
                 .Select(s => s.ToXml())));
@@ -92,11 +96,15 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
             Attributes = xml
                 .CreateAttributeDictionary()
                 .ThrowIfMissingAttributes(RequiredAttributes),
-            FileExtensionSignInfo = xml.Elements("FileExtensionSignInfo").Select(FileExtensionSignInfoModel.Parse).ToList(),
-            FileSignInfo = xml.Elements("FileSignInfo").Select(FileSignInfoModel.Parse).ToList(),
+            FileExtensionSignInfo = xml.Elements("FileExtensionSignInfo").Select(FileExtensionSignInfoModel.Parse)
+                .ThrowIfConflictingFileExtensionSignInfo().ToList(),
+            FileSignInfo = xml.Elements("FileSignInfo").Select(FileSignInfoModel.Parse)
+                .ThrowIfConflictingFileSignInfo().ToList(),
             ItemsToSign = xml.Elements("ItemsToSign").Select(ItemToSignModel.Parse).ToList(),
-            StrongNameSignInfo = xml.Elements("StrongNameSignInfo").Select(StrongNameSignInfoModel.Parse).ToList(),
-            CertificatesSignInfo = xml.Elements("CertificatesSignInfo").Select(CertificatesSignInfoModel.Parse).ToList(),
+            StrongNameSignInfo = xml.Elements("StrongNameSignInfo").Select(StrongNameSignInfoModel.Parse)
+                .ThrowIfConflictingStrongNameSignInfo().ToList(),
+            CertificatesSignInfo = xml.Elements("CertificatesSignInfo").Select(CertificatesSignInfoModel.Parse)
+                .ThrowIfConflictingCertificateSignInfo().ToList(),
         };
     }
 
@@ -156,6 +164,19 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
             get { return Attributes.GetOrDefault(nameof(CertificateName)); }
             set { Attributes[nameof(CertificateName)] = value; }
         }
+
+        public string TargetFramework
+        {
+            get { return Attributes.GetOrDefault(nameof(TargetFramework)); }
+            set { Attributes[nameof(TargetFramework)] = value; }
+        }
+
+        public string PublicKeyToken
+        {
+            get { return Attributes.GetOrDefault(nameof(PublicKeyToken)); }
+            set { Attributes[nameof(PublicKeyToken)] = value; }
+        }
+
         public override string ToString() => $"File \"{Include}\" is signed with {CertificateName}";
 
         public XElement ToXml() => new XElement(
@@ -187,10 +208,10 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
             set { Attributes[nameof(Include)] = value; }
         }
 
-        public string DualSigningAllowed
+        public bool DualSigningAllowed
         {
-            get { return Attributes.GetOrDefault(nameof(DualSigningAllowed)); }
-            set { Attributes[nameof(DualSigningAllowed)] = value; }
+            get { return bool.Parse(Attributes.GetOrDefault(nameof(DualSigningAllowed))); }
+            set { Attributes[nameof(DualSigningAllowed)] = value.ToString(); }
         }
         public override string ToString() => $"Certificate \"{Include}\" has DualSigningAllowed set to {DualSigningAllowed}";
 
