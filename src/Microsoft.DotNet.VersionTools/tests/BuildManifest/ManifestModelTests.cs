@@ -8,6 +8,8 @@ using Xunit;
 using Xunit.Abstractions;
 using System.Reflection.Metadata;
 using System.Reflection;
+using System.Linq;
+using System;
 
 namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 {
@@ -25,17 +27,36 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
         /// ToXml should throw with an appropriate error message.
         /// </summary>
         [Theory]
-        [InlineData]
-        public void ManifestModelToXmlFailsOnConflictingFileExtensionSignInfos(List<(string, string)> infos, List<string> conflictingExtensions)
+        [InlineData(false, ".ps1", "foocert")]
+        public void ManifestModelToXmlFailsOnConflictingFileExtensionSignInfos(bool conflicts, params string[] infos)
         {
-            const string uri = 
-            FileExtensionSignInfoModel[] models = new FileExtensionSignInfoModel[]
+            List<FileExtensionSignInfoModel> models = new List<FileExtensionSignInfoModel>();
+           
+            if (infos.Length % 2 != 0)
             {
-                new FileExtensionSignInfoModel() { Include = ".ps1", CertificateName = "Foo" },
-                new FileExtensionSignInfoModel() { Include = ".ps1", CertificateName = "Foo2" }
+                throw new ArgumentException();
             }
 
-            
+            // Include is first arg, cert name is second
+            // InlineData can't pass tuple types so using this instead.
+            for (int i = 0; i < infos.Length / 2; i++)
+            {
+                models.Add(new FileExtensionSignInfoModel() { Include = infos[i * 2], CertificateName = infos[i * 2 + 1] });
+            }
+
+            SigningInformationModel signInfo = new SigningInformationModel()
+            {
+                FileExtensionSignInfo = models
+            };
+
+            if (conflicts)
+            {
+                Assert.Throws<ArgumentException>(() => signInfo.ToXml());
+            }
+            else
+            {
+                Assert.NotNull(() => signInfo.)
+            }
         }
 
         [Fact]
@@ -182,9 +203,6 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
                 },
                 SigningInformation = new SigningInformationModel
                 {
-                    AzureDevOpsCollectionUri = "https://dev.azure.com/uri/",
-                    AzureDevOpsBuildId = 123456,
-                    AzureDevOpsProject = "project",
                     FileExtensionSignInfo = new List<FileExtensionSignInfoModel>
                     {
                         new FileExtensionSignInfoModel
@@ -313,7 +331,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
   <Package Id=""ArcadeSdkTest"" Version=""5.0.0"" />
   <Package Id=""TestPackage"" Version=""5.0.0"" />
   <Blob Id=""assets/symbols/test.nupkg""/>
-  <SigningInformation AzureDevOpsCollectionUri=""https://dev.azure.com/uri/"" AzureDevOpsProject=""project"" AzureDevOpsBuildId=""123456"">
+  <SigningInformation>
     <FileExtensionSignInfo Include="".dll"" CertificateName=""Microsoft400"" />
     <FileExtensionSignInfo Include="".jar"" CertificateName=""MicrosoftJARSHA2"" />
     <FileExtensionSignInfo Include="".nupkg"" CertificateName=""NuGet"" />
