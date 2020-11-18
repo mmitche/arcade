@@ -46,7 +46,7 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
                     .ThenBy(f => f.CertificateName, StringComparer.OrdinalIgnoreCase)
                     .Select(f => f.ToXml()))
             .Concat(CertificatesSignInfo
-                .ThrowIfConflictingCertificateSignInfo()
+                .ThrowIfInvalidCertificateSignInfo()
                 .OrderBy(f => f.Include, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(f => f.DualSigningAllowed)
                 .Select(f => f.ToXml()))
@@ -54,7 +54,7 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
                 .OrderBy(i => i.Include, StringComparer.OrdinalIgnoreCase)
                 .Select(i => i.ToXml()))
             .Concat(StrongNameSignInfo
-                .ThrowIfConflictingStrongNameSignInfo()
+                .ThrowIfInvalidStrongNameSignInfo()
                 .OrderBy(s => s.Include, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(s => s.PublicKeyToken, StringComparer.OrdinalIgnoreCase)
                 .Select(s => s.ToXml())));
@@ -70,9 +70,9 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
                 .ThrowIfInvalidFileSignInfo().ToList(),
             ItemsToSign = xml.Elements("ItemsToSign").Select(ItemToSignModel.Parse).ToList(),
             StrongNameSignInfo = xml.Elements("StrongNameSignInfo").Select(StrongNameSignInfoModel.Parse)
-                .ThrowIfConflictingStrongNameSignInfo().ToList(),
+                .ThrowIfInvalidStrongNameSignInfo().ToList(),
             CertificatesSignInfo = xml.Elements("CertificatesSignInfo").Select(CertificatesSignInfoModel.Parse)
-                .ThrowIfConflictingCertificateSignInfo().ToList(),
+                .ThrowIfInvalidCertificateSignInfo().ToList(),
         };
     }
 

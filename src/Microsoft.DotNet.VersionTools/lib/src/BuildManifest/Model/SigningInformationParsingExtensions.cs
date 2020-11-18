@@ -148,12 +148,17 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
         /// </summary>
         /// <param name="certificateSignInfo">File sign info entries</param>
         /// <returns>File sign info entries</returns>
-        public static IEnumerable<CertificatesSignInfoModel> ThrowIfConflictingCertificateSignInfo(
+        public static IEnumerable<CertificatesSignInfoModel> ThrowIfInvalidCertificateSignInfo(
             this IEnumerable<CertificatesSignInfoModel> certificateSignInfo)
         {
             Dictionary<string, HashSet<bool>> extensionToCertMapping = new Dictionary<string, HashSet<bool>>();
             foreach (var signInfo in certificateSignInfo)
             {
+                if (string.IsNullOrWhiteSpace(signInfo.Include))
+                {
+                    throw new ArgumentException($"CertificateName metadata of CertificatesSignInfo is invalid. Must not be empty");
+                }
+
                 if (!extensionToCertMapping.TryGetValue(signInfo.Include, out var hashSet))
                 {
                     hashSet = new HashSet<bool>();
@@ -179,17 +184,32 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
         /// </summary>
         /// <param name="strongNameSignInfo">File sign info entries</param>
         /// <returns>File sign info entries</returns>
-        public static IEnumerable<StrongNameSignInfoModel> ThrowIfConflictingStrongNameSignInfo(
+        public static IEnumerable<StrongNameSignInfoModel> ThrowIfInvalidStrongNameSignInfo(
             this IEnumerable<StrongNameSignInfoModel> strongNameSignInfo)
         {
             Dictionary<string, HashSet<string>> pktMapping = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
             foreach (var signInfo in strongNameSignInfo)
             {
+                if (string.IsNullOrWhiteSpace(signInfo.Include))
+                {
+                    throw new ArgumentException($"An invalid strong name was specified in StrongNameSignInfo. Must not be empty.");
+                }
+
+                if (!IsValidPublicKeyToken(signInfo.PublicKeyToken))
+                {
+                    throw new ArgumentException($"PublicKeyToken metadata of StrongNameSignInfo is not a valid public key token: '{signInfo.PublicKeyToken}'");
+                }
+
+                if (string.IsNullOrWhiteSpace(signInfo.CertificateName))
+                {
+                    throw new ArgumentException($"CertificateName metadata of StrongNameSignInfo is invalid. Must not be empty");
+                }
+
                 string value = $"{signInfo.Include}/{signInfo.CertificateName}";
                 if (!pktMapping.TryGetValue(signInfo.PublicKeyToken, out var hashSet))
                 {
                     hashSet = new HashSet<string>();
-                    pktMapping.Add(value, hashSet);
+                    pktMapping.Add(signInfo.PublicKeyToken, hashSet);
                 }
                 hashSet.Add(value);
             }
