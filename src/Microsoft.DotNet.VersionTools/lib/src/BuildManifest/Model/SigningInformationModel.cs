@@ -36,12 +36,12 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
             "SigningInformation",
             Enumerable.Concat(
                 FileExtensionSignInfo
-                    .ThrowIfConflictingFileExtensionSignInfo()
+                    .ThrowIfInvalidFileExtensionSignInfo()
                     .OrderBy(fe => fe.Include, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(fe => fe.CertificateName, StringComparer.OrdinalIgnoreCase)
                     .Select(fe => fe.ToXml()),
                 FileSignInfo
-                    .ThrowIfConflictingFileSignInfo()
+                    .ThrowIfInvalidFileSignInfo()
                     .OrderBy(f => f.Include, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(f => f.CertificateName, StringComparer.OrdinalIgnoreCase)
                     .Select(f => f.ToXml()))
@@ -60,14 +60,14 @@ namespace Microsoft.DotNet.VersionTools.BuildManifest.Model
                 .Select(s => s.ToXml())));
 
         public bool IsEmpty() => !FileExtensionSignInfo.Any() && !FileSignInfo.Any()
-            && !ItemsToSign.Any() && !StrongNameSignInfo.Any();
+            && !ItemsToSign.Any() && !StrongNameSignInfo.Any() && !CertificatesSignInfo.Any();
 
         public static SigningInformationModel Parse(XElement xml) => xml == null ? null : new SigningInformationModel
         {
             FileExtensionSignInfo = xml.Elements("FileExtensionSignInfo").Select(FileExtensionSignInfoModel.Parse)
-                .ThrowIfConflictingFileExtensionSignInfo().ToList(),
+                .ThrowIfInvalidFileExtensionSignInfo().ToList(),
             FileSignInfo = xml.Elements("FileSignInfo").Select(FileSignInfoModel.Parse)
-                .ThrowIfConflictingFileExtensionSignInfo().ToList(),
+                .ThrowIfInvalidFileSignInfo().ToList(),
             ItemsToSign = xml.Elements("ItemsToSign").Select(ItemToSignModel.Parse).ToList(),
             StrongNameSignInfo = xml.Elements("StrongNameSignInfo").Select(StrongNameSignInfoModel.Parse)
                 .ThrowIfConflictingStrongNameSignInfo().ToList(),

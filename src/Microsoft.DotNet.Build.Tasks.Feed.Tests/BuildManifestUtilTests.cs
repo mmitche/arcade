@@ -576,12 +576,12 @@ namespace Microsoft.DotNet.Build.Tasks.Feed.Tests
                     item =>
                     {
                         Assert.Equal("MyCert", item.Include);
-                        Assert.Equal("false", item.DualSigningAllowed);
+                        Assert.False(item.DualSigningAllowed);
                     },
                     item =>
                     {
                         Assert.Equal("MyOtherCert", item.Include);
-                        Assert.Equal("true", item.DualSigningAllowed);
+                        Assert.True(item.DualSigningAllowed);
                     });
                 Assert.Collection(modelFromFile.SigningInformation.FileExtensionSignInfo,
                     item =>
@@ -731,12 +731,12 @@ namespace Microsoft.DotNet.Build.Tasks.Feed.Tests
                 item =>
                 {
                     Assert.Equal("MyCert", item.Include);
-                    Assert.Equal("false", item.DualSigningAllowed);
+                    Assert.False(item.DualSigningAllowed);
                 },
                 item =>
                 {
                     Assert.Equal("MyOtherCert", item.Include);
-                    Assert.Equal("true", item.DualSigningAllowed);
+                    Assert.True(item.DualSigningAllowed);
                 });
             Assert.Collection(model.SigningInformation.FileExtensionSignInfo,
                 item =>

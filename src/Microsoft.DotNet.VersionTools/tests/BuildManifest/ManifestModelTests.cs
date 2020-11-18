@@ -10,6 +10,7 @@ using System.Reflection.Metadata;
 using System.Reflection;
 using System.Linq;
 using System;
+using System.Text;
 
 namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 {
@@ -23,19 +24,27 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
         }
 
         /// <summary>
-        /// Given a set of file sign extension infos that conflict,
-        /// ToXml should throw with an appropriate error message.
+        /// Given a set of file sign extension infos,
+        /// ToXml should throw with an appropriate error message if they are invalid 
         /// </summary>
         [Theory]
         [InlineData(false, ".ps1", "foocert")]
-        public void ManifestModelToXmlFailsOnConflictingFileExtensionSignInfos(bool conflicts, params string[] infos)
-        {
-            List<FileExtensionSignInfoModel> models = new List<FileExtensionSignInfoModel>();
-           
+        [InlineData(false, ".ps1", "foocert", ".PS1", "foocert")]
+        [InlineData(false, ".bar", "foocert", ".PS1", "foocert")]
+        [InlineData(false, ".ps1", "FOOCERT", ".PS1", "foocert")]
+        [InlineData(true, ".ps1", "FOOCERT", ".ps1", "barcert")] // Conflict
+        [InlineData(true, ".ps1", "FOOCERT", ".PS1", "barcert")] // Conflict
+        [InlineData(true, "foo.ps1", "FOOCERT", ".PS1", "barcert")] // Conflict
+        [InlineData(true, ".ps1", "")] // Can't be empty
+        [InlineData(true, "", "bar")] // Can't be empty
+        public void ManifestModelToXmlValidatesFileExtensionSignInfos(bool invalid, params string[] infos)
+        {           
             if (infos.Length % 2 != 0)
             {
                 throw new ArgumentException();
             }
+
+            List<FileExtensionSignInfoModel> models = new List<FileExtensionSignInfoModel>();
 
             // Include is first arg, cert name is second
             // InlineData can't pass tuple types so using this instead.
@@ -49,20 +58,243 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
                 FileExtensionSignInfo = models
             };
 
+            if (invalid)
+            {
+                Assert.Throws<ArgumentException>(() => signInfo.ToXml());
+            }
+            else
+            {
+                Assert.NotNull(signInfo.ToXml());
+            }
+        }
+
+        /// <summary>
+        /// Given a set of file sign extension infos,
+        /// Parse should throw with an appropriate error message if they are invalid.
+        /// </summary>
+        [Theory]
+        [InlineData(false, ".ps1", "foocert")]
+        [InlineData(false, ".ps1", "foocert", ".PS1", "foocert")]
+        [InlineData(false, ".bar", "foocert", ".PS1", "foocert")]
+        [InlineData(false, ".ps1", "FOOCERT", ".PS1", "foocert")]
+        [InlineData(true, ".ps1", "FOOCERT", ".ps1", "barcert")] // Conflict
+        [InlineData(true, ".ps1", "FOOCERT", ".PS1", "barcert")] // Conflict
+        [InlineData(true, "foo.ps1", "FOOCERT", ".PS1", "barcert")] // Conflict
+        [InlineData(true, ".ps1", "")] // Can't be empty
+        [InlineData(true, "", "bar")] // Can't be empty
+        public void ManifestModelFromXmlValidatesFileExtensionSignInfos(bool conflicts, params string[] infos)
+        {
+            if (infos.Length % 2 != 0)
+            {
+                throw new ArgumentException();
+            }
+
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("<SigningInformation>");
+
+            // Include is first arg, cert name is second
+            // InlineData can't pass tuple types so using this instead.
+            for (int i = 0; i < infos.Length / 2; i++)
+            {
+                builder.AppendLine($"<FileExtensionSignInfo Include=\"{infos[i * 2]}\" CertificateName=\"{infos[i * 2 + 1]}\" />");
+            }
+
+            builder.AppendLine("</SigningInformation>");
+
+            if (conflicts)
+            {
+                Assert.Throws<ArgumentException>(() => SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
+            }
+            else
+            {
+                Assert.NotNull(SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
+            }
+        }
+
+        /// <summary>
+        /// Given a set of explicit file sign infos that conflict,
+        /// ToXml should throw with an appropriate error message.
+        /// 
+        /// param order is Include CertificateName TargetFramework PublicKeyToken
+        /// </summary>
+        [Theory]
+        [InlineData(false, "bar.bat", "foocert", null, null)]
+        [InlineData(true, "foo/bar.bat", "foocert", null, null)] // Invalid file name
+        [InlineData(true, "foo\\bar.bat", "foocert", null, null)] // Invalid file name
+        [InlineData(true, "bar.bat", "", null, null)] // Empty cert
+        [InlineData(true, "bar.bat", null, null, null)] // Null cert
+        [InlineData(true, "bar.bat", "foocert", "net5", null)] // Invalid tfm
+        [InlineData(true, "bar.bat", "foocert", "net5.0", "zzz")] // Invalid pkt
+        [InlineData(false, "bar.bat", "foocert", null, null, "bar.bat2", "foocert", null, null)]
+        [InlineData(true, "bar.bat", "foocert2", null, null, "bar.bat", "foocert", null, null)]
+        [InlineData(false, "bar.bat", "foocert2", ".NETCoreApp,Version=v5.0", null, "bar.bat", "foocert", ".NETCoreApp,Version=v3.1", null)]
+        [InlineData(false, "bar.bat", "foocert2", ".NETCoreApp,Version=v1.0", "aaaaaaaaaaaaaaaa", "bar.bat", "foocert", ".NETCoreApp,Version=v1.0", "aaaaaaaaaaaaaaab")]
+        [InlineData(true, "bar.bat", "foocert2", ".NETCoreApp,Version=v1.0", "aaaaaaaaaaaaaaaa", "bar.bat", "foocert", ".NETCoreApp,Version=v1.0", "aaaaaaaaaaaaaaaa")]
+        public void ManifestModelToXmlValidatesFileSignInfos(bool conflicts, params string[] infos)
+        {
+            if (infos.Length % 4 != 0)
+            {
+                throw new ArgumentException();
+            }
+
+            List<FileSignInfoModel> models = new List<FileSignInfoModel>();
+
+            for (int i = 0; i < infos.Length / 4; i++)
+            {
+                models.Add(new FileSignInfoModel()
+                    {
+                        Include = infos[i * 4],
+                        CertificateName = infos[i * 4 + 1],
+                        TargetFramework = infos[i * 4 + 2],
+                        PublicKeyToken = infos[i * 4 + 3],
+                });
+            }
+
+            SigningInformationModel signInfo = new SigningInformationModel()
+            {
+                FileSignInfo = models
+            };
+
             if (conflicts)
             {
                 Assert.Throws<ArgumentException>(() => signInfo.ToXml());
             }
             else
             {
-                Assert.NotNull(() => signInfo.)
+                Assert.NotNull(signInfo.ToXml());
             }
         }
 
-        [Fact]
-        public void ManifestModelFromXmlFailsOnInvalidFileExtensionSignInfos()
+        /// <summary>
+        /// Given a set of explicit file sign infos that conflict,
+        /// Parse should throw with an appropriate error message if they are invalid.
+        /// 
+        /// param order is Include CertificateName TargetFramework PublicKeyToken
+        [Theory]
+        [InlineData(false, "bar.bat", "foocert", null, null)]
+        [InlineData(true, "foo/bar.bat", "foocert", null, null)] // Invalid file name
+        [InlineData(true, "foo\\bar.bat", "foocert", null, null)] // Invalid file name
+        [InlineData(true, "bar.bat", "", null, null)] // Empty cert
+        [InlineData(true, "bar.bat", null, null, null)] // Null cert
+        [InlineData(true, "bar.bat", "foocert", "net5", null)] // Invalid tfm
+        [InlineData(true, "bar.bat", "foocert", "net5.0", "zzz")] // Invalid pkt
+        [InlineData(false, "bar.bat", "foocert", null, null, "bar.bat2", "foocert", null, null)]
+        [InlineData(true, "bar.bat", "foocert2", null, null, "bar.bat", "foocert", null, null)]
+        [InlineData(false, "bar.bat", "foocert2", ".NETCoreApp,Version=v5.0", null, "bar.bat", "foocert", ".NETCoreApp,Version=v3.1", null)]
+        [InlineData(false, "bar.bat", "foocert2", ".NETCoreApp,Version=v1.0", "aaaaaaaaaaaaaaaa", "bar.bat", "foocert", ".NETCoreApp,Version=v1.0", "aaaaaaaaaaaaaaab")]
+        [InlineData(true, "bar.bat", "foocert2", ".NETCoreApp,Version=v1.0", "aaaaaaaaaaaaaaaa", "bar.bat", "foocert", ".NETCoreApp,Version=v1.0", "aaaaaaaaaaaaaaaa")]
+        public void ManifestModelFromXmlValidatesFileSignInfos(bool conflicts, params string[] infos)
         {
+            if (infos.Length % 4 != 0)
+            {
+                throw new ArgumentException();
+            }
 
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("<SigningInformation>");
+
+            List<FileSignInfoModel> models = new List<FileSignInfoModel>();
+
+            for (int i = 0; i < infos.Length / 4; i++)
+            {
+                string targetFramework = infos[i * 4 + 2] != null ? $"TargetFramework=\"{infos[i * 4 + 2]}\"" : "";
+                string publicKeyToken = infos[i * 4 + 3] != null ? $"PublicKeyToken=\"{infos[i * 4 + 3]}\"" : "";
+                builder.AppendLine($"<FileSignInfo Include=\"{infos[i * 4]}\" CertificateName=\"{infos[i * 4 + 1]}\" {targetFramework} {publicKeyToken} />");
+            }
+
+            builder.AppendLine("</SigningInformation>");
+
+            if (conflicts)
+            {
+                Assert.Throws<ArgumentException>(() => SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
+            }
+            else
+            {
+                Assert.NotNull(SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
+            }
+        }
+
+        /// <summary>
+        /// Given a set of explicit file sign infos that conflict,
+        /// ToXml should throw with an appropriate error message.
+        /// 
+        /// param order is CertificateName DualSigningAllowed
+        /// </summary>
+        [Theory]
+        [InlineData(false, "foocert", "true")]
+        [InlineData(false, "foocert", "false")]
+        [InlineData(true, "foocert", "true", "foocert", "false")]
+        [InlineData(false, "foocert", "false", "foocert2", "false")]
+        public void ManifestModelToXmlValidatesCertificateSignInfo(bool conflicts, params string[] infos)
+        {
+            if (infos.Length % 2 != 0)
+            {
+                throw new ArgumentException();
+            }
+
+            List<CertificatesSignInfoModel> models = new List<CertificatesSignInfoModel>();
+
+            for (int i = 0; i < infos.Length / 2; i++)
+            {
+                models.Add(new CertificatesSignInfoModel()
+                {
+                    Include = infos[i * 2],
+                    DualSigningAllowed = bool.Parse(infos[i * 2 + 1])
+                });
+            }
+
+            SigningInformationModel signInfo = new SigningInformationModel()
+            {
+                CertificatesSignInfo = models
+            };
+
+            if (conflicts)
+            {
+                Assert.Throws<ArgumentException>(() => signInfo.ToXml());
+            }
+            else
+            {
+                Assert.NotNull(signInfo.ToXml());
+            }
+        }
+
+        /// <summary>
+        /// Given a set of explicit file sign infos that conflict,
+        /// Parse should throw with an appropriate error message if they are invalid.
+        /// 
+        /// param order is Include DualSigningAllowed
+        [Theory]
+        [InlineData(false, "foocert", "true")]
+        [InlineData(false, "foocert", "false")]
+        [InlineData(true, "foocert", "true", "foocert", "false")]
+        [InlineData(false, "foocert", "false", "foocert2", "false")]
+        public void ManifestModelFromXmlValidatesCertificateSignInfo(bool conflicts, params string[] infos)
+        {
+            if (infos.Length % 2 != 0)
+            {
+                throw new ArgumentException();
+            }
+
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine("<SigningInformation>");
+
+            List<FileSignInfoModel> models = new List<FileSignInfoModel>();
+
+            for (int i = 0; i < infos.Length / 2; i++)
+            {
+                builder.AppendLine($"<CertificatesSignInfo Include=\"{infos[i * 2]}\" DualSigningAllowed=\"{infos[i * 2 + 1]}\" />");
+            }
+
+            builder.AppendLine("</SigningInformation>");
+
+            if (conflicts)
+            {
+                Assert.Throws<ArgumentException>(() => SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
+            }
+            else
+            {
+                Assert.NotNull(SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
+            }
         }
 
         [Fact]
