@@ -1,16 +1,14 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Collections.Generic;
 using Microsoft.DotNet.VersionTools.BuildManifest.Model;
+using System;
+using System.Collections.Generic;
+using System.Text;
 using System.Xml.Linq;
 using Xunit;
 using Xunit.Abstractions;
-using System.Reflection.Metadata;
-using System.Reflection;
-using System.Linq;
-using System;
-using System.Text;
+using FluentAssertions;
 
 namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 {
@@ -38,7 +36,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
         [InlineData(typeof(ArgumentException), ".ps1", "")] // Can't be empty
         [InlineData(typeof(ArgumentException), "", "bar")] // Can't be empty
         public void ManifestModelToXmlValidatesFileExtensionSignInfos(Type exceptionType, params string[] infos)
-        {           
+        {
             if (infos.Length % 2 != 0)
             {
                 throw new ArgumentException();
@@ -58,13 +56,19 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
                 FileExtensionSignInfo = models
             };
 
-            if (exceptionType != null)
+            VerifyToXml(exceptionType, signInfo);
+        }
+
+        private static void VerifyToXml(Type expectedExceptionType, SigningInformationModel signInfo)
+        {
+            if (expectedExceptionType != null)
             {
-                Assert.Throws(exceptionType, () => signInfo.ToXml());
+                Action act = () => signInfo.ToXml();
+                act.Should().Throw<Exception>().And.Should().BeOfType(expectedExceptionType);
             }
             else
             {
-                Assert.NotNull(signInfo.ToXml());
+                signInfo.ToXml().Should().NotBeNull();
             }
         }
 
@@ -101,13 +105,19 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 
             builder.AppendLine("</SigningInformation>");
 
-            if (exceptionType != null)
+            VerifyFromXml(exceptionType, builder);
+        }
+
+        private static void VerifyFromXml(Type expectedExceptionType, StringBuilder builder)
+        {
+            if (expectedExceptionType != null)
             {
-                Assert.Throws(exceptionType, () => SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
+                Action act = () => SigningInformationModel.Parse(XElement.Parse(builder.ToString()));
+                act.Should().Throw<Exception>().And.Should().BeOfType(expectedExceptionType);
             }
             else
             {
-                Assert.NotNull(SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
+                SigningInformationModel.Parse(XElement.Parse(builder.ToString())).Should().NotBeNull();
             }
         }
 
@@ -155,14 +165,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
                 FileSignInfo = models
             };
 
-            if (exceptionType != null)
-            {
-                Assert.Throws(exceptionType, () => signInfo.ToXml());
-            }
-            else
-            {
-                Assert.NotNull(signInfo.ToXml());
-            }
+            VerifyToXml(exceptionType, signInfo);
         }
 
         /// <summary>
@@ -204,14 +207,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 
             builder.AppendLine("</SigningInformation>");
 
-            if (exceptionType != null)
-            {
-                Assert.Throws(exceptionType, () => SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
-            }
-            else
-            {
-                Assert.NotNull(SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
-            }
+            VerifyFromXml(exceptionType, builder);
         }
 
         /// <summary>
@@ -248,14 +244,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
                 CertificatesSignInfo = models
             };
 
-            if (exceptionType != null)
-            {
-                Assert.Throws(exceptionType, () => signInfo.ToXml());
-            }
-            else
-            {
-                Assert.NotNull(signInfo.ToXml());
-            }
+            VerifyToXml(exceptionType, signInfo);
         }
 
         /// <summary>
@@ -291,14 +280,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 
             builder.AppendLine("</SigningInformation>");
 
-            if (exceptionType != null)
-            {
-                Assert.Throws(exceptionType, () => SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
-            }
-            else
-            {
-                Assert.NotNull(SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
-            }
+            VerifyFromXml(exceptionType, builder);
         }
 
         /// <summary>
@@ -340,14 +322,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
                 StrongNameSignInfo = models
             };
 
-            if (exceptionType != null)
-            {
-                Assert.Throws(exceptionType, () => signInfo.ToXml());
-            }
-            else
-            {
-                Assert.NotNull(signInfo.ToXml());
-            }
+            VerifyToXml(exceptionType, signInfo);
         }
 
         /// <summary>
@@ -383,14 +358,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
 
             builder.AppendLine("</SigningInformation>");
 
-            if (exceptionType != null)
-            {
-                Assert.Throws(exceptionType, () => SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
-            }
-            else
-            {
-                Assert.NotNull(SigningInformationModel.Parse(XElement.Parse(builder.ToString())));
-            }
+            VerifyFromXml(exceptionType, builder);
         }
 
         [Fact]
@@ -400,9 +368,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
             var model = BuildModel.Parse(xml);
             XElement modelXml = model.ToXml();
 
-            Assert.True(
-                XNode.DeepEquals(xml, modelXml),
-                "Model failed to output the parsed XML.");
+            XNode.DeepEquals(xml, modelXml).Should().BeTrue("Model failed to output the parsed XML.");
         }
 
         [Fact]
@@ -412,9 +378,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
             var model = OrchestratedBuildModel.Parse(xml);
             XElement modelXml = model.ToXml();
 
-            Assert.True(
-                XNode.DeepEquals(xml, modelXml),
-                "Model failed to output the parsed XML.");
+            XNode.DeepEquals(xml, modelXml).Should().BeTrue("Model failed to output the parsed XML.");
         }
 
         [Fact]
@@ -425,9 +389,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
             var model = BuildModel.Parse(xml);
             XElement modelXml = model.ToXml();
 
-            Assert.True(
-                XNode.DeepEquals(xml, modelXml),
-                "Model failed to output the parsed XML.");
+            XNode.DeepEquals(xml, modelXml).Should().BeTrue("Model failed to output the parsed XML.");
         }
 
         [Fact]
@@ -437,7 +399,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
             XElement modelXml = model.ToXml();
             XElement xml = XElement.Parse(@"<Build Name=""SimpleBuildManifest"" BuildId=""123""><Package Id=""Foo"" Version=""1.2.3-example"" /></Build>");
 
-            Assert.True(XNode.DeepEquals(xml, modelXml));
+            XNode.DeepEquals(xml, modelXml).Should().BeTrue("Model failed to output the parsed XML.");
         }
 
         [Fact]
@@ -469,7 +431,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
   <Build Name=""corefx"" BuildId=""20171129-04"" Branch=""master"" Commit=""defb6d52047cc3d6b5f5d0853b0afdb1512dfbf4"" />
 </OrchestratedBuild>");
 
-            Assert.True(XNode.DeepEquals(xml, modelXml));
+            XNode.DeepEquals(xml, modelXml).Should().BeTrue("Model failed to output the parsed XML.");
         }
 
         [Fact]
@@ -480,7 +442,7 @@ namespace Microsoft.DotNet.VersionTools.Tests.BuildManifest
             XElement modelXml = buildModel.ToXml();
             XElement xml = XElement.Parse(ExampleBuildStringWithSigningInformation);
 
-            Assert.True(XNode.DeepEquals(xml, modelXml));
+            XNode.DeepEquals(xml, modelXml).Should().BeTrue("Model failed to output the parsed XML.");
         }
 
         private BuildModel CreatePackageOnlyBuildManifestModel()
