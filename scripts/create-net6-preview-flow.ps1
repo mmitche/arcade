@@ -13,7 +13,7 @@ function MakeDefaultChannel($repo, $branch, $channel)
     & darc add-default-channel --repo "$repo" --branch "$branch" --channel "$channel" --quiet
 }
 
-function AddFlow($sourceRepo, $sourceChannel, $targetRepo, $targetBranch, $frequency)
+function AddFlow($sourceRepo, $sourceChannel, $targetRepo, $targetBranch, $frequency = "EveryBuild")
 {
     Write-Host "Adding flow - $sourceRepo @ $sourceChannel -> $targetRepo @ $targetBranch ($frequency)"
     & darc add-subscription --source-repo "$sourceRepo" --channel "$sourceChannel" --target-repo "$targetRepo" --target-branch "$targetBranch" --update-frequency "$frequency" --quiet --no-trigger --standard-automerge
@@ -63,33 +63,33 @@ AddArcadeFlow https://github.com/dotnet/roslyn-analyzers $SdkBranch
 AddArcadeFlow https://github.com/dotnet/templating $SdkBranch
 
 Write-Host "Add runtime -> runtime flow"
-AddFlow https://dev.azure.com/dnceng/internal/_git/dotnet-wpf-int $RuntimeChannel https://github.com/dotnet/wpf $RuntimeBranch EveryBuild
-AddFlow https://github.com/dotnet/efcore $RuntimeChannel https://github.com/dotnet/aspnetcore $RuntimeBranch EveryBuild
-AddFlow https://github.com/dotnet/icu $RuntimeChannel https://github.com/dotnet/runtime $RuntimeBranch EveryBuild
-AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/aspnetcore $RuntimeBranch EveryBuild
-AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/efcore $RuntimeBranch EveryBuild
-AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/extensions $RuntimeBranch EveryBuild
-AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/winforms $RuntimeBranch EveryBuild
-AddFlow https://github.com/dotnet/winforms $RuntimeChannel https://github.com/dotnet/wpf $RuntimeBranch EveryBuild
-AddFlow https://github.com/dotnet/wpf $RuntimeChannel https://github.com/dotnet/windowsdesktop $RuntimeBranch EveryBuild
-AddFlow https://github.com/mono/linker $RuntimeChannel https://github.com/dotnet/runtime $RuntimeBranch EveryBuild
+AddFlow https://dev.azure.com/dnceng/internal/_git/dotnet-wpf-int $RuntimeChannel https://github.com/dotnet/wpf $RuntimeBranch
+AddFlow https://github.com/dotnet/efcore $RuntimeChannel https://github.com/dotnet/aspnetcore $RuntimeBranch
+AddFlow https://github.com/dotnet/icu $RuntimeChannel https://github.com/dotnet/runtime $RuntimeBranch
+AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/aspnetcore $RuntimeBranch
+AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/efcore $RuntimeBranch
+AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/extensions $RuntimeBranch
+AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/winforms $RuntimeBranch
+AddFlow https://github.com/dotnet/winforms $RuntimeChannel https://github.com/dotnet/wpf $RuntimeBranch
+AddFlow https://github.com/dotnet/wpf $RuntimeChannel https://github.com/dotnet/windowsdesktop $RuntimeBranch
+AddFlow https://github.com/mono/linker $RuntimeChannel https://github.com/dotnet/runtime $RuntimeBranch
 
 Write-Host "Add runtime->sdk flow"
-AddFlow https://github.com/dotnet/aspnetcore $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
-AddFlow https://github.com/dotnet/windowsdesktop $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
-AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
-AddFlow https://github.com/mono/linker $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
+AddFlow https://github.com/dotnet/aspnetcore $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch
+AddFlow https://github.com/dotnet/windowsdesktop $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch
+AddFlow https://github.com/dotnet/runtime $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch
+AddFlow https://github.com/mono/linker $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch
 
 Write-Host "Add sdk->sdk flow"
-AddFlow https://github.com/dotnet/sdk $SdkChannel https://github.com/dotnet/installer $SdkBranch EveryBuild
-AddFlow https://github.com/dotnet/roslyn-analyzers $SdkChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
-AddFlow https://github.com/dotnet/templating $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
+AddFlow https://github.com/dotnet/sdk $SdkChannel https://github.com/dotnet/installer $SdkBranch
+AddFlow https://github.com/dotnet/roslyn-analyzers $SdkChannel https://github.com/dotnet/sdk $SdkBranch
+AddFlow https://github.com/dotnet/templating $RuntimeChannel https://github.com/dotnet/sdk $SdkBranch
 
 Write-Host "Add tooling->sdk flow"
-AddFlow https://github.com/nuget/nuget.client $VSChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
-AddFlow https://github.com/dotnet/roslyn "VS Master" https://github.com/dotnet/sdk $SdkBranch EveryBuild
-AddFlow https://github.com/dotnet/fsharp $VSChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
-AddFlow https://github.com/dotnet/msbuild $VSChannel https://github.com/dotnet/sdk $SdkBranch EveryBuild
+AddFlow https://github.com/nuget/nuget.client $VSChannel https://github.com/dotnet/sdk $SdkBranch
+AddFlow https://github.com/dotnet/roslyn "VS Master" https://github.com/dotnet/sdk $SdkBranch
+AddFlow https://github.com/dotnet/fsharp $VSChannel https://github.com/dotnet/sdk $SdkBranch
+AddFlow https://github.com/dotnet/msbuild $VSChannel https://github.com/dotnet/sdk $SdkBranch
 
 
 
