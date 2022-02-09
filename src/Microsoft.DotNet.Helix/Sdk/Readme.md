@@ -1,9 +1,9 @@
 # Microsoft.DotNet.Helix.Sdk
 
-This Package provides Helix Job sending functionality from an MSBuild project file.
+This Package provides Helix Job-sending functionality from an MSBuild project file.
 
 ## Examples
-Each of the following examples require dotnet-cli >= 2.1.300 and need the following files in a directory at or above the example project's directory.
+Each of the following examples require dotnet-cli >= 3.1.x, and need the following files in a directory at or above the example project's directory.
 #### NuGet.config
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -149,13 +149,21 @@ Given a local folder `$(TestFolder)` containing `runtests.cmd`, this will run `r
     <!-- The helix queue this job should run on. -->
     <HelixTargetQueue>Windows.10.Amd64.Open</HelixTargetQueue>
 
+    <!-- Whether to fail the build if any Helix queues supplied don't exist.
+         If set to false, sending to non-existent Helix Queues will only print a warning. Defaults to true. 
+         Only set this to false if losing this coverage when the target queue is deprecated is acceptable.
+         For any job waiting on runs, this will still cause failure if all queues do not exist as there must be
+         one or more runs started for waiting to not log errors.  Only set if you need it.
+    -->
+    <FailOnMissingTargetQueue>false</FailOnMissingTargetQueue>
+
     <!--
       The set of helix queues to send jobs to.
       This property is multiplexed over just like <TargetFrameworks> for C# projects.
       The project is built once per entry in this list with <HelixTargetQueue> set to the current list element value.
       Note that all payloads sent need to be able to run on all variations included.
     -->
-    <HelixTargetQueues>Ubuntu.1804.Amd64.Open;Ubuntu.1604.Amd64.Open;(Alpine.39.Amd64)Ubuntu.1604.Amd64.Open@mcr.microsoft.com/dotnet-buildtools/prereqs:alpine-3.9-helix-bfcd90a-20200123191053</HelixTargetQueues>
+    <HelixTargetQueues>Ubuntu.1804.Amd64.Open;Ubuntu.1604.Amd64.Open;(Alpine.39.Amd64)Ubuntu.1804.Amd64.Open@mcr.microsoft.com/dotnet-buildtools/prereqs:alpine-3.9-helix-bfcd90a-20200123191053</HelixTargetQueues>
 
     <!-- 'true' to download dotnet cli and add it to the path for every workitem. Default 'false' -->
     <IncludeDotNetCli>true</IncludeDotNetCli>
@@ -170,18 +178,6 @@ Given a local folder `$(TestFolder)` containing `runtests.cmd`, this will run `r
     <EnableAzurePipelinesReporter>false</EnableAzurePipelinesReporter>
     <!-- 'true' to produce a build error when tests fail. Default 'true' -->
     <FailOnTestFailure>true</FailOnTestFailure>
-
-    <!--
-      'true' to enable the xunit reporter. Default 'false'
-      The xunit reporter will report test results from a test results
-      xml file found in the work item working directory.
-      The following file names are accepted:
-        testResults.xml
-        test-results.xml
-        test_results.xml
-    -->
-    <!-- Instruct the sdk to wait for test result ingestion by MC, and fail if there are any failed work items or tests. -->
-    <FailOnMissionControlTestFailure>false</FailOnMissionControlTestFailure>
 
     <!--
       Commands that are run before each workitem's command
@@ -232,7 +228,6 @@ Given a local folder `$(TestFolder)` containing `runtests.cmd`, this will run `r
     <XUnitArguments></XUnitArguments>
   </PropertyGroup>
 
-
   <ItemGroup>
     <!--
       Another way to specify target queues
@@ -275,42 +270,44 @@ There are times when a work item may detect that the machine being executed on i
 #### Request Infrastructure Retry
 An "infrastructure retry" is pre-existing functionality Helix Clients use in cases such as when communication to the telemetry service or Azure Service Bus fails; this allows the work item be run again in entirety, generally (but not guaranteedly) on a different machine, with the hope that the next machine will be in a better state.  Note that requesting this prevents any job using it from finishing, and as a FIFO queue the work items that get retried go to the back of the queue, so calling this API can significantly increase job execution time based off how many jobs are being handled by a given queue.      
 
-##### Sample usage:
+##### Sample usage in Python:
 
-###### In Python:
 
-```
-from helix.workitemutil import request_infra_retry
+```py
+from helix.public import request_infra_retry
 
 request_infra_retry('Optional reason string')
-
 ```
-
-###### Outside python:
-
-Linux / OSX: `$HELIX_PYTHONPATH -c "from helix.workitemutil import request_infra_retry; request_infra_retry('Optional reason string')"`
-
-Windows: `%HELIX_PYTHONPATH% -c "from helix.workitemutil import request_infra_retry; request_infra_retry('Optional reason string')"`
 
 #### Request post-workitem reboot
 Helix work items explicitly rebooting the helix client machine themself will never "finish", since this will in most cases preclude sending the final event telemetry for these work items.  However, a work item may know that the machine is in a bad state where a reboot would be desirable (for instance, if the Helix agent is acting as a build machine and some leaked build process is preventing workspace cleanup). After calling this API, the work item runs to completion as normal, then after sending the usual telemetry and uploading results will perform a reboot before taking the next work item. 
 
-##### Sample usage:
+##### Sample usage in Python:
 
-###### In Python:
-
-```
-from helix.workitemutil import request_reboot
+```py
+from helix.public import request_reboot
 
 request_reboot('Optional reason string')
-
 ```
 
-###### Outside python:
+#### Send workitem metric / metrics
+Send custom metric(s) for the current workitem. The API accepts metric name(s), value(s) (float) and metric dimensions. These metrics are stored in the Kusto Metrics table.
 
-Linux / OSX: `$HELIX_PYTHONPATH -c "from helix.workitemutil import request_reboot; request_reboot('Optional reason string')"`
+##### Sample usage in Python:
 
-Windows: `%HELIX_PYTHONPATH% -c "from helix.workitemutil import request_reboot; request_reboot('Optional reason string')"`
+```py
+from helix.public import send_metric, send_metrics
+
+send_metric('MetricName', <value>, {'Dimension1': 'value1', 'Dimension2' : 'value2', ...})
+
+send_metrics({'Metric1': <value1>, 'Metric2': <value2>,...}, {'Dimension1': 'value1', 'Dimension2' : 'value2', ...})
+```
+
+#### Sample usage from outside python:
+
+Linux / OSX: `$HELIX_PYTHONPATH -c "from helix.public import <function>; <function>(...)"`
+
+Windows: `%HELIX_PYTHONPATH% -c "from helix.public import <function>; <function>(...)"`
 
 ### Common Helix client environment variables
 

@@ -25,7 +25,7 @@
     </PropertyGroup>
 
     <PropertyGroup>
-      <WixVersion>1.0.0-v3.14.0.4118</WixVersion>
+      <WixVersion>1.0.0-v3.14.0.5722</WixVersion>
       <WixToolsDir>$(BaseIntermediateOutputPath)WixTools.$(WixVersion)/</WixToolsDir>
       <!-- Used in WiX targets to locate files. -->
       <WixInstallPath>$(WixToolsDir)</WixInstallPath>
@@ -96,7 +96,12 @@
   <Target Name="_GetUpgradeCode"
           DependsOnTargets="GetWixBuildConfiguration"
           Condition="'$(UpgradeCode)' == ''">
-    <GenerateGuidFromName Name="$(_OutInstallerFile)">
+
+    <PropertyGroup>
+      <MsiUpgradeCodeSeed Condition="'$(MsiUpgradeCodeSeed)' == ''">$(_OutInstallerFile)</MsiUpgradeCodeSeed>
+    </PropertyGroup>
+
+    <GenerateGuidFromName Name="$(MsiUpgradeCodeSeed)">
       <Output TaskParameter="GeneratedGuid" PropertyName="UpgradeCode" />
     </GenerateGuidFromName>
   </Target>
@@ -291,6 +296,7 @@
       <CandleVariables Include="NugetVersion" Value="$(Version)" />
       <CandleVariables Include="TargetArchitectureDescription" Value="$(InstallerTargetArchitecture)$(CrossArchContentsBuildPart)" />
       <CandleVariables Include="UpgradeCode" Value="$(UpgradeCode)" />
+      <CandleVariables Include="MajorUpgradeSchedule" Value="$(MajorUpgradeSchedule)" Condition="'$(MajorUpgradeSchedule)' != ''" />
 
       <!-- If this is a cross-arch MSI, add target arch to the dependency key for uniqueness. -->
       <CandleVariables Include="CrossArchContentsPlatformPart" Value="$(CrossArchContentsBuildPart.Replace('-', '_'))" />

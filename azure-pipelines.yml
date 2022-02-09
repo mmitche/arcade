@@ -53,7 +53,7 @@ stages:
             vmImage: windows-latest
           ${{ if eq(variables._RunAsInternal, True) }}:
             name: NetCore1ESPool-Internal
-            demands: ImageOverride -equals Build.Server.Amd64.VS2017
+            demands: ImageOverride -equals Build.Server.Amd64.VS2019
         strategy:
           matrix:
             Build_Release:
@@ -71,7 +71,7 @@ stages:
             $(_InternalBuildArgs)
             /p:Test=false
           displayName: Windows Build / Publish
-        - task: ComponentGovernanceComponentDetection@0
+
       - ${{ if eq(variables._RunAsPublic, True) }}:
         - job: Linux
           container: LinuxContainer
@@ -101,10 +101,8 @@ stages:
       parameters:
         artifacts:
           publish:
-            artifacts:
-              name: Artifacts_Test_$(Agent.OS)_$(_BuildConfig)
             logs: 
-              name: Logs_Test_$(Agent.OS)_$(_BuildConfig)
+              name: Logs_Test_$(Agent.OS)_$(_BuildConfig)_$(_Testing)
           download: true
         workspace:
           clean: all
@@ -119,6 +117,8 @@ stages:
                 _BuildConfig: Release
               Build_Debug:
                 _BuildConfig: Debug
+          variables:
+          - _Testing: Helix
           preSteps:
           - checkout: self
             clean: true
@@ -141,6 +141,7 @@ stages:
               -ci
               -restore
               -test
+              -warnAsError $false
               -projects $(Build.SourcesDirectory)\tests\UnitTests.proj
               /bl:$(Build.SourcesDirectory)\artifacts\log\$(_BuildConfig)\Helix.binlog
               /p:RestoreUsingNuGetTargets=false
@@ -148,12 +149,29 @@ stages:
             env:
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
               HelixAccessToken: ''
+        - job: Windows_NT_XHarness
+          timeoutInMinutes: 90
+          pool:
+            vmimage: windows-latest
+          strategy:
+            matrix:
+              Build_Release:
+                _BuildConfig: Release
+              Build_Debug:
+                _BuildConfig: Debug
+          variables:
+          - _Testing: Xharness
+          preSteps:
+          - checkout: self
+            clean: true
+          steps:
           - powershell: eng\common\build.ps1
               -configuration $(_BuildConfig) 
               -prepareMachine
               -ci
               -restore
               -test
+              -warnAsError $false
               -projects $(Build.SourcesDirectory)\tests\XHarness.Android.DeviceTests.proj
               /bl:$(Build.SourcesDirectory)\artifacts\log\$(_BuildConfig)\Helix.XHarness.Android.Device.Tests.binlog
               /p:RestoreUsingNuGetTargets=false
@@ -172,6 +190,8 @@ stages:
                 _BuildConfig: Debug
               Build_Release:
                 _BuildConfig: Release
+          variables:
+          - _Testing: Helix
           preSteps:
           - checkout: self
             clean: true
@@ -182,6 +202,7 @@ stages:
               --ci
               --restore
               --test
+              --warnAsError false
               --projects $(Build.SourcesDirectory)/tests/UnitTests.proj
               /bl:$(Build.SourcesDirectory)/artifacts/log/$(_BuildConfig)/Helix.binlog
               /p:RestoreUsingNuGetTargets=false
@@ -189,12 +210,30 @@ stages:
             env:
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
               HelixAccessToken: ''
+        - job: Linux_XHarness_Apple_Simulator
+          timeoutInMinutes: 90
+          container: LinuxContainer
+          pool:
+            vmimage: ubuntu-latest
+          strategy:
+            matrix:
+              Build_Debug:
+                _BuildConfig: Debug
+              Build_Release:
+                _BuildConfig: Release
+          variables:
+          - _Testing: Xharness_Apple_Simulator
+          preSteps:
+          - checkout: self
+            clean: true
+          steps:
           - script: eng/common/build.sh
               -configuration $(_BuildConfig)
               -prepareMachine
               -ci
               -restore
               -test
+              -warnAsError false
               -projects $(Build.SourcesDirectory)/tests/XHarness.Apple.SimulatorTests.proj
               /bl:$(Build.SourcesDirectory)/artifacts/log/$(_BuildConfig)/XHarness.Apple.Simulator.Tests.binlog
               /p:RestoreUsingNuGetTargets=false
@@ -202,12 +241,30 @@ stages:
             env:
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
               HelixAccessToken: ''
+        - job: Linux_XHarness_Apple_Device
+          timeoutInMinutes: 90
+          container: LinuxContainer
+          pool:
+            vmimage: ubuntu-latest
+          strategy:
+            matrix:
+              Build_Debug:
+                _BuildConfig: Debug
+              Build_Release:
+                _BuildConfig: Release
+          variables:
+          - _Testing: Xharness_Apple_Device
+          preSteps:
+          - checkout: self
+            clean: true
+          steps:
           - script: eng/common/build.sh
               -configuration $(_BuildConfig)
               -prepareMachine
               -ci
               -restore
               -test
+              -warnAsError false
               -projects $(Build.SourcesDirectory)/tests/XHarness.Apple.DeviceTests.proj
               /bl:$(Build.SourcesDirectory)/artifacts/log/$(_BuildConfig)/Helix.XHarness.Apple.Device.Tests.binlog
               /p:RestoreUsingNuGetTargets=false
@@ -215,12 +272,30 @@ stages:
             env:
               SYSTEM_ACCESSTOKEN: $(System.AccessToken)
               HelixAccessToken: ''
+        - job: Linux_XHarness
+          timeoutInMinutes: 90
+          container: LinuxContainer
+          pool:
+            vmimage: ubuntu-latest
+          strategy:
+            matrix:
+              Build_Debug:
+                _BuildConfig: Debug
+              Build_Release:
+                _BuildConfig: Release
+          variables:
+          - _Testing: Xharness
+          preSteps:
+          - checkout: self
+            clean: true
+          steps:
           - script: eng/common/build.sh
               -configuration $(_BuildConfig) 
               -prepareMachine
               -ci
               -restore
               -test
+              -warnAsError false
               -projects $(Build.SourcesDirectory)/tests/XHarness.Android.SimulatorTests.proj
               /bl:$(Build.SourcesDirectory)/artifacts/log/$(_BuildConfig)/Helix.XHarness.Android.Simulator.Tests.binlog
               /p:RestoreUsingNuGetTargets=false

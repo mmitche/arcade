@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk"> 
 
   <PropertyGroup>
     <TargetFrameworks>net472;netcoreapp3.1</TargetFrameworks>
@@ -12,8 +12,9 @@
     <PackageReference Include="Microsoft.Build.Tasks.Core" Version="$(MicrosoftBuildTasksCoreVersion)" />
     <PackageReference Include="Microsoft.Build.Utilities.Core" Version="$(MicrosoftBuildUtilitiesCoreVersion)" />
     <PackageReference Include="Microsoft.Build.Framework" Version="$(MicrosoftBuildFrameworkVersion)" />
+    <PackageReference Include="Microsoft.Deployment.DotNet.Releases" Version="$(MicrosoftDeploymentDotNetReleasesVersion)" />
     <PackageReference Include="Microsoft.NET.Sdk.WorkloadManifestReader" Version="$(MicrosoftNetSdkWorkloadManifestReaderVersion)" />
-    <PackageReference Include="NuGet.Packaging" Version="$(NuGetVersion)" />
+    <PackageReference Include="NuGet.Packaging" Version="$(NuGetVersion)" />    
   </ItemGroup>
 
   <ItemGroup>
@@ -21,6 +22,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Remove="testassets\emsdkWorkloadManifest.json" />
+    <None Remove="testassets\emsdkWorkloadManifest2.json" />
     <None Remove="testassets\mauiWorkloadManifest.json" />
   </ItemGroup>
 </Project>

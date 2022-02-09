@@ -230,7 +230,7 @@ In order to use the new publishing mechanism, the easiest way to start is by tur
 
     | Name                                    | Type     | Description                                                                                          |Default Value |
     | --------------------------------------- | -------- | -----------------------------------------------------------------------------------------------------|----- |
-    | publishingInfraVersion                  | int      | Publishing infrastructure version - Use 3 for latest publishing infra. Accepted values are 2 / 3.                               | 2    |
+    | publishingInfraVersion                  | int      | Publishing infrastructure version - Use 3 for latest publishing infra. Accepted values are 3 (.NET 5.0+) and 2 (.NET 3.1).                               | 3    |
     | enableSourceLinkValidation              | bool     | Run SourceLink validation during the post-build stage.                                               | false |
     | enableSigningValidation                 | bool     | Run signing validation during the post-build stage.                                                  | true |
     | enableNugetValidation                   | bool     | Run NuGet package validation tool during the post build stage.                                       | true |
@@ -250,7 +250,7 @@ In order to use the new publishing mechanism, the easiest way to start is by tur
     * [Arcade-Validation](https://github.com/dotnet/arcade-validation/blob/master/azure-pipelines.yml)
     * [Arcade-Services](https://github.com/dotnet/arcade-services/blob/master/azure-pipelines.yml)
 
-1. Create or update eng/Publishing.props, adding the following MSBuild property:
+2. Create or update eng/Publishing.props, adding the following MSBuild property:
     ```XML
         <PublishingVersion>3</PublishingVersion>
     ```
@@ -505,11 +505,7 @@ TargetChannelConfig takes the following attributes
 | isInternal  | Publishing to an internal Channel or public channel | true or false  |
 | PublishingInfraVersion | Which version of the publishing infra can use this configuration. | Enum = All(0), Legacy(1), Latest(2), Next(3)  |
 | AkaMSChannelName | The name that should be used for creating Aka.ms links for this channel. A specified build quality will be appended to this value if supplied. | See [What build qualities are supported?](#what-build-qualities-are-supported) for valid build quality values |
-| ShippingFeed | The URL (including the index.json suffix) of the *shipping* feed to be used for this channel. |   | 
-| TransportFeed | The URL (including the index.json suffix) of the *transport* feed to be used for this channel. |   | 
-| SymbolsFeed | The URL (including the index.json suffix) of the *symbols* feed to be used for this channel. |   | 
-| ChecksumsFeed | The URL (including the index.json suffix) where *checksums* should be published to. | FeedForChecksums for public channel, FeedInternalForChecksums for internal  | 
-| InstallersFeed | The URL (including the index.json suffix) where *installers* should be published to. | FeedForInstallers for public channel, FeedInternalForInstallers for internal channel   |
+| TargetFeedSpecification | List of feeds to publish (type of asset -> feed mapping)|          |
 | SymbolTargetType | Publish to MSDL or SymWeb symbol server | PublicAndInternalSymbolTargets -publishes to both Msdl and SymWeb or InternalSymbolTargets -publishes only to SymWeb |
 | FilenamesToExclude | List of files to exclude from creating aka.ms links. Should be exact file names | For most channels, we exclude MergedManifest.xml |  
 | Flatten | Whether or not to flatten the path when creating the aka.ms links | Defaults to true, which means the path in the aka.ms link will be flattened. False will use the full path without the version information of the files being published |
@@ -518,17 +514,14 @@ TargetChannelConfig takes the following attributes
 Eg:
 Publishing to General Testing channel : General Testing
 
+            // "General Testing",
             new TargetChannelConfig(
                 529,
                 false,
                 PublishingInfraVersion.All,
                 "generaltesting",
-                "https://pkgs.dev.azure.com/dnceng/public/_packaging/general-testing/nuget/v3/index.json",
-                "https://pkgs.dev.azure.com/dnceng/public/_packaging/general-testing/nuget/v3/index.json",
-                "https://pkgs.dev.azure.com/dnceng/public/_packaging/general-testing-symbols/nuget/v3/index.json",
-                FeedForChecksums,
-                FeedForInstallers,
-                PublicAndInternalSymbolTargets)
+                GeneralTestingFeeds,
+                PublicAndInternalSymbolTargets),
 ```
 
 
