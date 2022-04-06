@@ -999,6 +999,17 @@ namespace Microsoft.DotNet.Build.Tasks.Feed.Model
                 filenamesToExclude: FilenamesToExclude,
                 flatten: false),
 
+            // "VS 17.3",
+            new TargetChannelConfig(
+                2692,
+                false,
+                PublishingInfraVersion.All,
+                new List<string>(),
+                DotNetToolsFeeds,
+                PublicAndInternalSymbolTargets,
+                filenamesToExclude: FilenamesToExclude,
+                flatten: false),
+
             // ".NET Libraries",
             new TargetChannelConfig(
                 1648,
