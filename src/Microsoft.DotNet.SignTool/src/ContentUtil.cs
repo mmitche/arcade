@@ -11,6 +11,8 @@ using System.Reflection.Metadata;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
+using System.Diagnostics;
+using System.Runtime.Versioning;
 
 namespace Microsoft.DotNet.SignTool
 {
@@ -119,6 +121,134 @@ namespace Microsoft.DotNet.SignTool
             {
                 return string.Empty;
             }
+        }
+
+        /// <summary>
+        /// Determines whether a library is a Microsoft library based on copyright.
+        /// Copyright used for binary assets (assemblies and packages) built by Microsoft must be Microsoft copyright.
+        /// </summary>
+        public static bool IsMicrosoftLibrary(string copyright)
+            => copyright != null && copyright.Contains("Microsoft");
+
+        public static bool IsThirdPartyCertificate(string name)
+            => name.Equals("3PartyDual", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("3PartySHA2", StringComparison.OrdinalIgnoreCase);
+
+        public static PEInfo GetPEInfo(string fullPath)
+        {
+            bool isManaged = ContentUtil.IsManaged(fullPath);
+
+            if (!isManaged)
+            {
+                return new PEInfo(isManaged, GetNativeLegalCopyright(fullPath));
+            }
+
+            bool isCrossgened = ContentUtil.IsCrossgened(fullPath);
+            string publicKeyToken = ContentUtil.GetPublicKeyToken(fullPath);
+
+            GetManagedTargetFrameworkAndCopyright(fullPath, out string targetFramework, out string copyright);
+            return new PEInfo(isManaged, isCrossgened, copyright, publicKeyToken, targetFramework);
+        }
+
+        /// <summary>
+        /// Retrieves the copyright info from the file version info resource structure.
+        /// This is used as a backup method, in cases of non-managed binaries as well as managed
+        /// binaries in some cases (crossgen)
+        /// </summary>
+        /// <param name="filePath"></param>
+        /// <returns></returns>
+        public static string GetNativeLegalCopyright(string filePath)
+        {
+            var fileVersionInfo = FileVersionInfo.GetVersionInfo(filePath);
+            // Native assets have a space rather than an empty string if there is not a legal copyright available.
+            return fileVersionInfo.LegalCopyright?.Trim();
+        }
+
+        public static void GetManagedTargetFrameworkAndCopyright(string filePath, out string targetFramework, out string copyright)
+        {
+            targetFramework = string.Empty;
+            copyright = string.Empty;
+
+            using (var stream = File.OpenRead(filePath))
+            using (var pereader = new PEReader(stream))
+            {
+                if (pereader.HasMetadata)
+                {
+                    var metadataReader = pereader.GetMetadataReader();
+
+                    var assemblyDef = metadataReader.GetAssemblyDefinition();
+                    foreach (var attributeHandle in assemblyDef.GetCustomAttributes())
+                    {
+                        var attribute = metadataReader.GetCustomAttribute(attributeHandle);
+                        if (ContentUtil.QualifiedNameEquals(metadataReader, attribute, "System.Runtime.Versioning", "TargetFrameworkAttribute"))
+                        {
+                            targetFramework = new FrameworkName(GetTargetFrameworkAttributeValue(metadataReader, attribute)).FullName;
+                        }
+                        else if (QualifiedNameEquals(metadataReader, attribute, "System.Reflection", "AssemblyCopyrightAttribute"))
+                        {
+                            copyright = GetTargetFrameworkAttributeValue(metadataReader, attribute);
+                        }
+                    }
+                }
+            }
+
+            // If there is no copyright available, it's possible this was a r2r binary. Get the native info instead.
+            if (string.IsNullOrEmpty(copyright))
+            {
+                copyright = GetNativeLegalCopyright(filePath);
+            }
+        }
+
+        private static bool QualifiedNameEquals(MetadataReader reader, CustomAttribute attribute, string namespaceName, string typeName)
+        {
+            bool qualifiedNameEquals(StringHandle nameHandle, StringHandle namespaceHandle)
+                => reader.StringComparer.Equals(nameHandle, typeName) && reader.StringComparer.Equals(namespaceHandle, namespaceName);
+
+            var ctorHandle = attribute.Constructor;
+            switch (ctorHandle.Kind)
+            {
+                case HandleKind.MemberReference:
+                    var container = reader.GetMemberReference((MemberReferenceHandle)ctorHandle).Parent;
+                    switch (container.Kind)
+                    {
+                        case HandleKind.TypeReference:
+                            var containerRef = reader.GetTypeReference((TypeReferenceHandle)container);
+                            return qualifiedNameEquals(containerRef.Name, containerRef.Namespace);
+
+                        case HandleKind.TypeDefinition:
+                            var containerDef = reader.GetTypeDefinition((TypeDefinitionHandle)container);
+                            return qualifiedNameEquals(containerDef.Name, containerDef.Namespace);
+
+                        default:
+                            return false;
+                    }
+
+                case HandleKind.MethodDefinition:
+                    var typeDef = reader.GetTypeDefinition(reader.GetMethodDefinition((MethodDefinitionHandle)ctorHandle).GetDeclaringType());
+                    return qualifiedNameEquals(typeDef.Name, typeDef.Namespace);
+
+                default:
+                    return false;
+            }
+        }
+
+        private sealed class DummyCustomAttributeTypeProvider : ICustomAttributeTypeProvider<object>
+        {
+            public static readonly DummyCustomAttributeTypeProvider Instance = new DummyCustomAttributeTypeProvider();
+            public object GetPrimitiveType(PrimitiveTypeCode typeCode) => null;
+            public object GetSystemType() => null;
+            public object GetSZArrayType(object elementType) => null;
+            public object GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) => null;
+            public object GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind) => null;
+            public object GetTypeFromSerializedName(string name) => null;
+            public PrimitiveTypeCode GetUnderlyingEnumType(object type) => default;
+            public bool IsSystemType(object type) => false;
+        }
+
+        private static string GetTargetFrameworkAttributeValue(MetadataReader reader, CustomAttribute attribute)
+        {
+            var value = attribute.DecodeValue(DummyCustomAttributeTypeProvider.Instance);
+            return (value.FixedArguments.Length == 1) ? value.FixedArguments[0].Value as string : null;
         }
     }
 }

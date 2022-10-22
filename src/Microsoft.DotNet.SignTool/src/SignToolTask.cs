@@ -47,6 +47,8 @@ namespace Microsoft.DotNet.SignTool
         /// </summary>
         public bool AllowEmptySignList { get; set; }
 
+        public bool FastSignTool { get; set; }
+
         /// <summary>
         /// By default in non-DryRun cases we verify the vsix and nuget packages contain a signature file
         /// This option disables that check in cases you want to sign the container at a later step. 
@@ -230,40 +232,55 @@ namespace Microsoft.DotNet.SignTool
             var signTool = DryRun ? new ValidationOnlySignTool(signToolArgs, Log) : (SignTool)new RealSignTool(signToolArgs, Log);
 
             Telemetry telemetry = new Telemetry();
-            try
-            {
-                Configuration configuration = new Configuration(
-                TempDir,
-                ItemsToSign.OrderBy(i => i.GetMetadata(SignToolConstants.CollisionPriorityId)).ToArray(),
-                strongNameInfo,
-                fileSignInfo,
-                extensionSignInfo,
-                dualCertificates,
-                Log,
-                useHashInExtractionPath: UseHashInExtractionPath,
-                telemetry: telemetry);
 
-                if (ReadExistingContainerSigningCache)
+            if (!FastSignTool)
+            {
+                try
                 {
-                    Log.LogError($"Existing signing container cache no longer supported.");
-                    return;
+                    Configuration configuration = new Configuration(
+                    TempDir,
+                    ItemsToSign.OrderBy(i => i.GetMetadata(SignToolConstants.CollisionPriorityId)).ToArray(),
+                    strongNameInfo,
+                    fileSignInfo,
+                    extensionSignInfo,
+                    dualCertificates,
+                    Log,
+                    useHashInExtractionPath: UseHashInExtractionPath,
+                    telemetry: telemetry);
+
+                    if (ReadExistingContainerSigningCache)
+                    {
+                        Log.LogError($"Existing signing container cache no longer supported.");
+                        return;
+                    }
+
+                    ParsedSigningInput = configuration.GenerateListOfFiles();
+
+                    if (Log.HasLoggedErrors) return;
+
+                    var util = new BatchSignUtil(BuildEngine, Log, signTool, ParsedSigningInput, ItemsToSkipStrongNameCheck?.Select(i => i.ItemSpec).ToArray(), configuration._hashToCollisionIdMap, telemetry: telemetry);
+
+                    util.SkipZipContainerSignatureMarkerCheck = this.SkipZipContainerSignatureMarkerCheck;
+
+                    if (Log.HasLoggedErrors) return;
+
+                    util.Go(DoStrongNameCheck);
                 }
-
-                ParsedSigningInput = configuration.GenerateListOfFiles();
-
-                if (Log.HasLoggedErrors) return;
-
-                var util = new BatchSignUtil(BuildEngine, Log, signTool, ParsedSigningInput, ItemsToSkipStrongNameCheck?.Select(i => i.ItemSpec).ToArray(), configuration._hashToCollisionIdMap, telemetry: telemetry);
-
-                util.SkipZipContainerSignatureMarkerCheck = this.SkipZipContainerSignatureMarkerCheck;
-
-                if (Log.HasLoggedErrors) return;
-
-                util.Go(DoStrongNameCheck);
+                finally
+                {
+                    telemetry.SendEvents();
+                }
             }
-            finally
+            else
             {
-                telemetry.SendEvents();
+                try
+                {
+                    
+                }
+                finally
+                {
+                    telemetry.SendEvents();
+                }
             }
         }
 

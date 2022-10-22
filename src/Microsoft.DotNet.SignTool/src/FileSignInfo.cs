@@ -118,6 +118,5 @@ namespace Microsoft.DotNet.SignTool
 
         internal FileSignInfo WithSignableParts()
             => new FileSignInfo(File, SignInfo.WithIsAlreadySigned(false), TargetFramework, WixContentFilePath, true);
-
     }
 }
