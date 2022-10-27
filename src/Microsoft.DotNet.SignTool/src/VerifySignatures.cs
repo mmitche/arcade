@@ -64,7 +64,7 @@ namespace Microsoft.DotNet.SignTool
         }
         internal static bool IsSignedContainer(string fullPath)
         {
-            if (FileSignInfo.IsZipContainer(fullPath))
+            if (FileInfo.IsZipContainer(fullPath))
             {
                 bool signedContainer = false;
 
@@ -72,7 +72,7 @@ namespace Microsoft.DotNet.SignTool
                 {
                     foreach (ZipArchiveEntry entry in archive.Entries)
                     {
-                        if (FileSignInfo.IsNupkg(fullPath) && VerifySignedNupkgByFileMarker(entry.FullName))
+                        if (FileInfo.IsNupkg(fullPath) && VerifySignedNupkgByFileMarker(entry.FullName))
                         {
                             if (!VerifySignedNupkgIntegrity(fullPath))
                             {
@@ -81,7 +81,7 @@ namespace Microsoft.DotNet.SignTool
                             signedContainer = true;
                             break;
                         }
-                        else if (FileSignInfo.IsVsix(fullPath) && VerifySignedVSIXByFileMarker(entry.FullName))
+                        else if (FileInfo.IsVsix(fullPath) && VerifySignedVSIXByFileMarker(entry.FullName))
                         {
                             signedContainer = true;
                             break;

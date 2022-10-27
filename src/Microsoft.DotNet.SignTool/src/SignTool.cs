@@ -38,13 +38,13 @@ namespace Microsoft.DotNet.SignTool
 
         public abstract bool RunMSBuild(IBuildEngine buildEngine, string projectFilePath, string binLogPath);
 
-        public bool Sign(IBuildEngine buildEngine, int round, IEnumerable<FileSignInfo> files)
+        public bool Sign(IBuildEngine buildEngine, int round, IEnumerable<FileWithSignInfo> files)
         {
             return LocalStrongNameSign(buildEngine, round, files)
                 && AuthenticodeSign(buildEngine, round, files);
         }
 
-        private bool LocalStrongNameSign(IBuildEngine buildEngine, int round, IEnumerable<FileSignInfo> files)
+        private bool LocalStrongNameSign(IBuildEngine buildEngine, int round, IEnumerable<FileWithSignInfo> files)
         {
             foreach (var file in files)
             {
@@ -80,7 +80,7 @@ namespace Microsoft.DotNet.SignTool
             return true;
         }
 
-        private bool AuthenticodeSign(IBuildEngine buildEngine, int round, IEnumerable<FileSignInfo> filesToSign)
+        private bool AuthenticodeSign(IBuildEngine buildEngine, int round, IEnumerable<FileWithSignInfo> filesToSign)
         {
             var signingDir = Path.Combine(_args.TempDir, "Signing");
             var nonOSXFilesToSign = filesToSign.Where(fsi => !SignToolConstants.SignableOSXExtensions.Contains(Path.GetExtension(fsi.FileName)));
@@ -139,7 +139,7 @@ namespace Microsoft.DotNet.SignTool
             return nonOSXSigningStatus && osxSigningStatus;
         }
 
-        private string GenerateBuildFileContent(IEnumerable<FileSignInfo> filesToSign)
+        private string GenerateBuildFileContent(IEnumerable<FileWithSignInfo> filesToSign)
         {
             var builder = new StringBuilder();
             AppendLine(builder, depth: 0, text: @"<?xml version=""1.0"" encoding=""utf-8""?>");

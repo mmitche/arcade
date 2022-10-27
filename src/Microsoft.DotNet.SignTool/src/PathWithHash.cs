@@ -10,7 +10,7 @@ namespace Microsoft.DotNet.SignTool
     /// <summary>
     ///     A tuple representing a specific file on disk and its associated hash.
     ///     
-    ///     This contrasts with <seealso cref="SignedFileContentKey"/>, which represents
+    ///     This contrasts with <seealso cref="FileContentKey"/>, which represents
     ///     a file name and its associated content key.
     /// </summary>
     public class PathWithHash

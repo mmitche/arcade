@@ -20,14 +20,14 @@ namespace Microsoft.DotNet.SignTool
         /// <summary>
         /// Signing information.
         /// </summary>
-        internal FileSignInfo FileSignInfo { get; }
+        internal FileWithSignInfo FileSignInfo { get; }
 
         /// <summary>
         /// The parts inside this container which need to be signed.
         /// </summary>
         internal ImmutableDictionary<string, ZipPart> NestedParts { get; }
 
-        internal ZipData(FileSignInfo fileSignInfo, ImmutableDictionary<string, ZipPart> nestedBinaryParts)
+        internal ZipData(FileWithSignInfo fileSignInfo, ImmutableDictionary<string, ZipPart> nestedBinaryParts)
         {
             FileSignInfo = fileSignInfo;
             NestedParts = nestedBinaryParts;
@@ -49,14 +49,14 @@ namespace Microsoft.DotNet.SignTool
         public void Repack(TaskLoggingHelper log, string tempDir = null, string wixToolsPath = null)
         {
 #if NET472
-            if (FileSignInfo.IsVsix())
+            if (FileSignInfo.FileInfo.IsVsix())
             {
                 RepackPackage(log);
             }
             else
 #endif
             {
-                if (FileSignInfo.IsWixContainer())
+                if (FileSignInfo.FileInfo.IsWixContainer())
                 {
                     RepackWixPack(log, tempDir, wixToolsPath);
                 }
@@ -155,7 +155,7 @@ namespace Microsoft.DotNet.SignTool
             try
             {
                 Directory.CreateDirectory(outputDir);
-                ZipFile.ExtractToDirectory(FileSignInfo.WixContentFilePath, workingDir);
+                ZipFile.ExtractToDirectory(FileSignInfo.FileInfo.WixContentFilePath, workingDir);
 
                 var fileList = Directory.GetFiles(workingDir, "*", SearchOption.AllDirectories);
                 foreach (var file in fileList)

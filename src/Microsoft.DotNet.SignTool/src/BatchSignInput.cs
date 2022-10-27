@@ -16,13 +16,13 @@ namespace Microsoft.DotNet.SignTool
         /// <summary>
         /// The ordered names of the files to be signed.
         /// </summary>
-        internal ImmutableArray<FileSignInfo> FilesToSign { get; }
+        internal ImmutableArray<FileWithSignInfo> FilesToSign { get; }
 
         /// <summary>
         /// Holds information about each of the containers that will be signed.
         /// The key is the content hash of the file.
         /// </summary>
-        internal ImmutableDictionary<SignedFileContentKey, ZipData> ZipDataMap;
+        internal ImmutableDictionary<FileContentKey, ZipData> ZipDataMap;
 
         /// <summary>
         /// A list of files whose content needs to be overwritten by signed content from a different file.
@@ -30,7 +30,7 @@ namespace Microsoft.DotNet.SignTool
         /// </summary>
         internal ImmutableArray<KeyValuePair<string, string>> FilesToCopy;
 
-        internal BatchSignInput(ImmutableArray<FileSignInfo> filesToSign, ImmutableDictionary<SignedFileContentKey, ZipData> zipDataMap, ImmutableArray<KeyValuePair<string, string>> filesToCopy)
+        internal BatchSignInput(ImmutableArray<FileWithSignInfo> filesToSign, ImmutableDictionary<FileContentKey, ZipData> zipDataMap, ImmutableArray<KeyValuePair<string, string>> filesToCopy)
         {
             Debug.Assert(!filesToSign.IsDefault);
             Debug.Assert(zipDataMap != null);

@@ -16,7 +16,7 @@ namespace Microsoft.DotNet.SignTool
     /// This contrasts with <seealso cref="PathWithHash"/>, which is a helper data structure
     /// designed to convey the full path to a file and its associated file.
     /// </summary>
-    internal struct SignedFileContentKey : IEquatable<SignedFileContentKey>
+    internal struct FileContentKey : IEquatable<FileContentKey>
     {
         /// <summary>
         ///     Hash of the file.
@@ -29,7 +29,7 @@ namespace Microsoft.DotNet.SignTool
         public readonly string StringHash;
         public readonly string FileName;
 
-        public SignedFileContentKey(ImmutableArray<byte> contentHash, string fileName)
+        public FileContentKey(ImmutableArray<byte> contentHash, string fileName)
         {
             Debug.Assert(!contentHash.IsDefault);
             Debug.Assert(fileName != null);
@@ -39,18 +39,18 @@ namespace Microsoft.DotNet.SignTool
         }
 
         public override bool Equals(object obj)
-            => obj is SignedFileContentKey key && Equals(key);
+            => obj is FileContentKey key && Equals(key);
 
         public override int GetHashCode()
             => Hash.Combine(FileName, StringHash.GetHashCode());
 
-        bool IEquatable<SignedFileContentKey>.Equals(SignedFileContentKey other)
+        bool IEquatable<FileContentKey>.Equals(FileContentKey other)
             => FileName == other.FileName && StringHash == other.StringHash;
 
-        public static bool operator ==(SignedFileContentKey key1, SignedFileContentKey key2)
+        public static bool operator ==(FileContentKey key1, FileContentKey key2)
             => key1.Equals(key2);
 
-        public static bool operator !=(SignedFileContentKey key1, SignedFileContentKey key2)
+        public static bool operator !=(FileContentKey key1, FileContentKey key2)
             => !(key1 == key2);
     }
 }

@@ -21,7 +21,7 @@ namespace Microsoft.DotNet.SignTool
         private readonly BatchSignInput _batchData;
         private readonly SignTool _signTool;
         private readonly string[] _itemsToSkipStrongNameCheck;
-        private readonly Dictionary<SignedFileContentKey, string> _hashToCollisionIdMap;
+        private readonly Dictionary<FileContentKey, string> _hashToCollisionIdMap;
         private Telemetry _telemetry;
 
         internal bool SkipZipContainerSignatureMarkerCheck { get; set; }
@@ -31,7 +31,7 @@ namespace Microsoft.DotNet.SignTool
             SignTool signTool,
             BatchSignInput batchData,
             string[] itemsToSkipStrongNameCheck,
-            Dictionary<SignedFileContentKey, string> hashToCollisionIdMap,
+            Dictionary<FileContentKey, string> hashToCollisionIdMap,
             Telemetry telemetry = null)
         {
             _signTool = signTool;
@@ -90,7 +90,7 @@ namespace Microsoft.DotNet.SignTool
 
         private void RemovePublicSign()
         {
-            foreach (var fileSignInfo in _batchData.FilesToSign.Where(x => x.IsPEFile()))
+            foreach (var fileSignInfo in _batchData.FilesToSign.Where(x => x.FileInfo.IsPEFile()))
             {
                 if (fileSignInfo.SignInfo.StrongName != null && fileSignInfo.SignInfo.ShouldSign)
                 {
@@ -110,10 +110,10 @@ namespace Microsoft.DotNet.SignTool
             var toProcessList = _batchData.FilesToSign.ToList();
             var toRepackSet = _batchData.FilesToSign.Where(x => x.ShouldRepack)?.Select(x => x.FullPath)?.ToHashSet();
             var round = 0;
-            var trackedSet = new HashSet<SignedFileContentKey>();
+            var trackedSet = new HashSet<FileContentKey>();
 
             // Given a list of files that need signing, sign them in a batch.
-            bool signGroup(IEnumerable<FileSignInfo> files, out int signedCount)
+            bool signGroup(IEnumerable<FileWithSignInfo> files, out int signedCount)
             {
                 var filesToSign = files.Where(fileInfo => fileInfo.SignInfo.ShouldSign).ToArray();
                 signedCount = filesToSign.Length;
@@ -140,10 +140,10 @@ namespace Microsoft.DotNet.SignTool
 
             // Given a list of files that need signing, sign the installer engines
             // of those that are wix containers.
-            bool signEngines(IEnumerable<FileSignInfo> files, out int signedCount)
+            bool signEngines(IEnumerable<FileWithSignInfo> files, out int signedCount)
             {
                 var enginesToSign = files.Where(fileInfo => fileInfo.SignInfo.ShouldSign && 
-                                                fileInfo.IsWixContainer() &&
+                                                fileInfo.FileInfo.IsWixContainer() &&
                                                 Path.GetExtension(fileInfo.FullPath) == ".exe").ToArray();
                 signedCount = enginesToSign.Length;
                 if (enginesToSign.Length == 0)
@@ -153,7 +153,7 @@ namespace Microsoft.DotNet.SignTool
 
                 _log.LogMessage(MessageImportance.High, $"Round {round}: Signing {enginesToSign.Length} engines.");
 
-                Dictionary<SignedFileContentKey, FileSignInfo> engines = new Dictionary<SignedFileContentKey, FileSignInfo>();
+                Dictionary<FileContentKey, FileWithSignInfo> engines = new Dictionary<FileContentKey, FileWithSignInfo>();
                 var workingDirectory = Path.Combine(_signTool.TempDir, "engines");
                 int engineContainer = 0;
                 // extract engines
@@ -168,7 +168,7 @@ namespace Microsoft.DotNet.SignTool
                         return false;
                     }
 
-                    var fileUniqueKey = new SignedFileContentKey(file.ContentHash, engineFileName);
+                    var fileUniqueKey = new FileContentKey(file.FileInfo.File.ContentHash, engineFileName);
 
                     engines.Add(fileUniqueKey, file);
                     engineContainer++;
@@ -176,7 +176,7 @@ namespace Microsoft.DotNet.SignTool
 
                 // sign engines
                 bool signResult = _signTool.Sign(_buildEngine, round, engines.Select(engine =>
-                    new FileSignInfo(new PathWithHash(engine.Key.FileName, engine.Value.ContentHash), engine.Value.SignInfo)));
+                    new FileWithSignInfo(new FileInfo(new PathWithHash(engine.Key.FileName, engine.Value.FileInfo.File.ContentHash), null, null, null), engine.Value.SignInfo)));
                 if(!signResult)
                 {
                     _log.LogError($"Failed to sign engines");
@@ -209,7 +209,7 @@ namespace Microsoft.DotNet.SignTool
 
             // Given a group of file that are ready for processing,
             // repack those files that are containers.
-            void repackGroup(IEnumerable<FileSignInfo> files, out int repackCount)
+            void repackGroup(IEnumerable<FileWithSignInfo> files, out int repackCount)
             {
                 var repackList = files.Where(w => toRepackSet.Contains(w.FullPath)).ToList();
 
@@ -224,12 +224,12 @@ namespace Microsoft.DotNet.SignTool
                 parallelOptions.MaxDegreeOfParallelism = 16;
                 Parallel.ForEach(repackList, parallelOptions, file =>
                 {
-                    if (file.IsZipContainer())
+                    if (file.FileInfo.IsZipContainer())
                     {
                         _log.LogMessage($"Repacking container: '{file.FileName}'");
                         _batchData.ZipDataMap[file.FileContentKey].Repack(_log);
                     }
-                    else if (file.IsWixContainer())
+                    else if (file.FileInfo.IsWixContainer())
                     {
                         _log.LogMessage($"Packing wix container: '{file.FileName}'");
                         _batchData.ZipDataMap[file.FileContentKey].Repack(_log, _signTool.TempDir, _signTool.WixToolsPath);
@@ -244,9 +244,9 @@ namespace Microsoft.DotNet.SignTool
 
             // Is this file ready to be signed or repackaged? That is are all of the items that it depends on already
             // signed, don't need signing, and are repacked.
-            bool isReady(FileSignInfo file)
+            bool isReady(FileWithSignInfo file)
             {
-                if (file.IsContainer())
+                if (file.FileInfo.IsContainer())
                 {
                     var zipData = _batchData.ZipDataMap[file.FileContentKey];
                     return zipData.NestedParts.Values.All(x => (!x.FileSignInfo.SignInfo.ShouldSign ||
@@ -259,9 +259,9 @@ namespace Microsoft.DotNet.SignTool
             // Identify the next set of files that should be signed or repacked.
             // This is the set of files for which all of the dependencies have been signed,
             // are already signed, are repacked, etc.
-            List<FileSignInfo> identifyNextGroup()
+            List<FileWithSignInfo> identifyNextGroup()
             {
-                var list = new List<FileSignInfo>();
+                var list = new List<FileWithSignInfo>();
                 var i = 0;
                 while (i < toProcessList.Count)
                 {
@@ -427,14 +427,16 @@ namespace Microsoft.DotNet.SignTool
 
                 bool isInvalidEmptyCertificate = fileName.SignInfo.Certificate == null && !fileName.HasSignableParts && !fileName.SignInfo.IsAlreadySigned;
 
-                if (fileName.IsPEFile())
+                FileInfo fileInfo = fileName.FileInfo;
+
+                if (fileInfo.IsPEFile())
                 {
                     if (isVsixCert)
                     {
                         log.LogError($"Assembly {fileName} cannot be signed with a VSIX certificate");
                     }
                 }
-                else if (fileName.IsVsix())
+                else if (fileName.FileInfo.IsVsix())
                 {
                     if (!isVsixCert)
                     {
@@ -446,9 +448,9 @@ namespace Microsoft.DotNet.SignTool
                         log.LogError($"VSIX {fileName} cannot be strong name signed.");
                     }
                 }
-                else if (fileName.IsNupkg())
+                else if (fileName.FileInfo.IsNupkg())
                 {
-                    if(isInvalidEmptyCertificate)
+                    if (isInvalidEmptyCertificate)
                     {
                         log.LogError($"Nupkg {fileName} should have a certificate name.");
                     }
@@ -458,7 +460,7 @@ namespace Microsoft.DotNet.SignTool
                         log.LogError($"Nupkg {fileName} cannot be strong name signed.");
                     }
                 }
-                else if (fileName.IsZip())
+                else if (fileName.FileInfo.IsZip())
                 {
                     if (fileName.SignInfo.Certificate != null)
                     {
@@ -470,7 +472,7 @@ namespace Microsoft.DotNet.SignTool
                         log.LogError($"Zip {fileName} cannot be strong name signed.");
                     }
                 }
-                if (fileName.IsExecutableWixContainer())
+                if (fileName.FileInfo.IsExecutableWixContainer())
                 {
                     if (isInvalidEmptyCertificate)
                     {
@@ -485,9 +487,11 @@ namespace Microsoft.DotNet.SignTool
             }
         }
 
-        private void VerifyAfterSign(FileSignInfo file)
+        private void VerifyAfterSign(FileWithSignInfo file)
         {
-            if (file.IsPEFile())
+            FileInfo fileInfo = file.FileInfo;
+
+            if (fileInfo.IsPEFile())
             {
                 using (var stream = File.OpenRead(file.FullPath))
                 {
@@ -501,14 +505,14 @@ namespace Microsoft.DotNet.SignTool
                     }
                 }
             }
-            else if (file.IsPowerShellScript())
+            else if (fileInfo.IsPowerShellScript())
             {
                 if (!_signTool.VerifySignedPowerShellFile(file.FullPath))
                 {
                     _log.LogError($"Powershell file {file.FullPath} does not have a signature mark.");
                 }
             }
-            else if (file.IsZipContainer())
+            else if (fileInfo.IsZipContainer())
             {
                 var zipData = _batchData.ZipDataMap[file.FileContentKey];
                 bool signedContainer = false;
@@ -521,11 +525,11 @@ namespace Microsoft.DotNet.SignTool
 
                         if (!SkipZipContainerSignatureMarkerCheck)
                         {
-                            if (file.IsNupkg() && _signTool.VerifySignedNugetFileMarker(relativeName))
+                            if (fileInfo.IsNupkg() && _signTool.VerifySignedNugetFileMarker(relativeName))
                             {
                                 signedContainer = true;
                             }
-                            else if (file.IsVsix() && _signTool.VerifySignedVSIXFileMarker(relativeName))
+                            else if (fileInfo.IsVsix() && _signTool.VerifySignedVSIXFileMarker(relativeName))
                             {
                                 signedContainer = true;
                             }
@@ -543,7 +547,7 @@ namespace Microsoft.DotNet.SignTool
 
                 if (!SkipZipContainerSignatureMarkerCheck)
                 {
-                    if ((file.IsNupkg() || file.IsVsix()) && !signedContainer)
+                    if ((fileInfo.IsNupkg() || fileInfo.IsVsix()) && !signedContainer)
                     {
                         _log.LogError($"Container {file.FullPath} does not have signature marker.");
                     }
@@ -565,7 +569,8 @@ namespace Microsoft.DotNet.SignTool
                     continue;
                 }
 
-                if (file.IsManaged() && !file.IsCrossgened() && !_signTool.VerifyStrongNameSign(file.FullPath))
+                FileInfo fileInfo = file.FileInfo;
+                if (fileInfo.IsManaged() && !fileInfo.IsCrossgened() && !_signTool.VerifyStrongNameSign(file.FullPath))
                 {
                     _log.LogError($"Assembly {file.FullPath} is not strong-name signed correctly.");
                 }
