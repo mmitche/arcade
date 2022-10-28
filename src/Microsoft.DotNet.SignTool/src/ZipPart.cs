@@ -6,12 +6,12 @@ namespace Microsoft.DotNet.SignTool
     internal readonly struct ZipPart
     {
         internal string RelativeName { get; }
-        internal FileWithSignInfo FileSignInfo { get; }
+        internal FileInfo FileInfo { get; }
 
-        internal ZipPart(string relativeName, FileWithSignInfo signInfo)
+        internal ZipPart(string relativeName, FileInfo fileInfo)
         {
             RelativeName = relativeName;
-            FileSignInfo = signInfo;
+            FileInfo = fileInfo;
         }
     }
 }

@@ -28,6 +28,11 @@ namespace Microsoft.DotNet.SignTool
         /// Key is the content hash of the file.
         /// </summary>
         private readonly ConcurrentDictionary<FileContentKey, Task<ZipData>> _zipDataMap;
+        // Locks to avoid race conditions around unpack of archives
+        // or the files within archives. The archives themselves have a race in
+        // Unpack where the UnpackImpl task in the zip data map would be launched twice without one.
+        // So we 
+        public ConcurrentDictionary<FileContentKey, object> _zipDataLocks = new ConcurrentDictionary<FileContentKey, object>();
 
         /// <summary>
         /// Path to where container files will be extracted.
@@ -99,8 +104,6 @@ namespace Microsoft.DotNet.SignTool
 
         private Telemetry _telemetry;
 
-        private int _filesCurrentlyBeingProcessed = 0;
-
         // We must complete all unpack and examination tasks on all lower correlation IDs
         // before we can start the examination task for a higher ID. The way this is done
         // is that we keep a dictionary of all the unpack and examine tasks by correlation ID.
@@ -134,7 +137,7 @@ namespace Microsoft.DotNet.SignTool
             _fileExtensionSignInfo = extensionSignInfo;
             _filesToSign = new ConcurrentBag<FileWithSignInfo>();
             _filesToCopy = new ConcurrentBag<KeyValuePair<string, string>>();
-            _zipDataMap = new ConcurrentDictionary<FileContentKey, ZipData>();
+            _zipDataMap = new ConcurrentDictionary<FileContentKey, Task<ZipData>>();
             _filesSignInfoByContentKey = new ConcurrentDictionary<FileContentKey, FileWithSignInfo>();
             _itemsToSign = itemsToSign;
             _dualCertificates = dualCertificates == null ? new ITaskItem[0] : dualCertificates;
@@ -168,13 +171,30 @@ namespace Microsoft.DotNet.SignTool
             }
         }
 
+        /// <summary>
+        /// Recursively process files.
+        /// </summary>
+        /// <param name="file"></param>
+        /// <param name="tasks"></param>
+        /// <param name="depth"></param>
+        /// <remarks>
+        ///     It's important that no recursion happen within throttled async tasks. For instance,
+        ///     unpack should complete and then we should look at the file contents. NOT recurse as we unpack the contents.</remarks>
+        /// <returns></returns>
         public async Task ProcessFile(FileInfo file, ConcurrentBag<Task> tasks, int depth)
         {
+
+            List<Task> subTasks = new List<Task>();
             if (file.IsContainer())
             {
                 // Unpack and recurse on the sub items
-                var unpackFileTask = UnpackImpl(file);
-
+                var zipData = await Unpack(file);
+                
+                // Walk all nested parts and process.
+                foreach (var nestedFile in zipData.NestedParts)
+                {
+                    subTasks.Add(ProcessFile(nestedFile, tasks, depth + 1);
+                }
             }
 
             var fileSignInfo = await Examine(file);
@@ -192,19 +212,42 @@ namespace Microsoft.DotNet.SignTool
             // First, see whether we need to unpack this at all. If the
             // zip data map already contains this file entry, no need to continue, just
             // return the task.
-
             if (_zipDataMap.TryGetValue(file.FileContentKey, out var zipData))
             {
                 return zipData;
             }
 
-            // We don't have the task, so start one. It IS possible that
-            // two or more tasks get started here. Only one will end up in
-            // the zip data map, of course, and the unpack implementation is
-            // thread safe. It must be because even two unrelated zips may unpack
-            // files to the same location.
-            _zipDataMap.TryAdd(file.FileContentKey, UnpackImpl(file));
+            // The point of using the concurrent zip data map AND the lock is that
+            // we want to avoid starting the unpack task twice for the same input
+            // file content key. When we TryAdd to the zip data map, the Task will
+            // start. We only want to start it once. So we really need a lock. We could
+            // get clever and attempt to use the concurrent dictionary entries as the lock
+            // (e.g. adding a new task that does nothing, then starting afterwards), but other threads
+            // accessing the dictionary will need to return the real task. While this appears a bit messy, it's
+            // a bit easier to attempt to add a new object to a CD, then if you can, lock it. If you can't, lock
+            // the object that did get added. Then the first thread to enter the lock gets to start the task, and
+            // the second thread does nothing, and just returns the task that got started.
+            var unpackLock = new object();
+            if (!_zipDataLocks.TryAdd(file.FileContentKey, unpackLock))
+            {
+                unpackLock = _zipDataLocks[file.FileContentKey];
+            }
 
+            lock (unpackLock)
+            {
+                // Read value again. If it exists, then no need to start.
+                // That means someone entered this mutex before us and we should just return the
+                // value. Otherwise, 
+                if (!_zipDataMap.ContainsKey(file.FileContentKey))
+                {
+                    if (!_zipDataMap.TryAdd(file.FileContentKey, UnpackImpl(file)))
+                    {
+                        throw new Exception($"Expected that {file.File.FullPath} @ {file.FileContentKey.StringHash} has lock to unpack");
+                    }
+                }
+            }
+
+            // Now the task should have been started
             return _zipDataMap[file.FileContentKey];
         }
 
@@ -216,18 +259,16 @@ namespace Microsoft.DotNet.SignTool
 
                 if (file.IsZipContainer())
                 {
-                    if (TryBuildZipData(file, out var zipData))
-                    {
-                        return zipData;
-                    }
+                    return await TryBuildZipData(file);
                 }
                 else if (file.IsWixContainer())
                 {
                     _log.LogMessage($"Trying to gather data for wix container {file.File.FullPath}");
-                    if (TryBuildWixData(file, out var msiData))
-                    {
-                        return msiData;
-                    }
+                    return await TryBuildWixData(file);
+                }
+                else
+                {
+                    throw new NotImplementedException("Unknown container type");
                 }
             }
             finally
@@ -279,7 +320,7 @@ namespace Microsoft.DotNet.SignTool
         /// Build up the <see cref="ZipData"/> instance for a given zip container. This will also report any consistency
         /// errors found when examining the zip archive.
         /// </summary>
-        private ZipData TryBuildZipData(FileInfo zipFile, string alternativeArchivePath = null)
+        private async Task<ZipData> TryBuildZipData(FileInfo zipFile, string alternativeArchivePath = null)
         {
             string archivePath = zipFile.File.FullPath;
             if (alternativeArchivePath != null)
@@ -318,7 +359,7 @@ namespace Microsoft.DotNet.SignTool
                     using (MemoryStream entryMemoryStream = new MemoryStream((int)entry.Length))
                     {
                         // We have to open the file so that we can get at the content hash
-                        entryStream.CopyTo(entryMemoryStream);
+                        await entryStream.CopyToAsync(entryMemoryStream);
                         entryMemoryStream.Position = 0;
                         ImmutableArray<byte> contentHash = ContentUtil.GetContentHash(entryMemoryStream);
 
@@ -333,9 +374,12 @@ namespace Microsoft.DotNet.SignTool
                         string tempPath = Path.Combine(_pathToContainerUnpackingDirectory, extractPathRoot, relativePath);
 
                         // This could race, but only one thread will end up with the OpenWrite
-                        // handle. Catch the IOException and 
+                        // handle. Catch the UnauthorizedAccessException if the file couldn't be written.
+                        // We could lock here, but it should be unnecessary.
                         if (!File.Exists(tempPath))
                         {
+                            _log.LogMessage($"Extracting file '{fileName}' from '{archivePath}' to '{tempPath}'.");
+
                             try
                             {
                                 Directory.CreateDirectory(Path.GetDirectoryName(tempPath));
@@ -343,46 +387,69 @@ namespace Microsoft.DotNet.SignTool
                                 entryMemoryStream.Position = 0;
                                 using (var tempFileStream = File.OpenWrite(tempPath))
                                 {
-                                    entryMemoryStream.CopyTo(tempFileStream);
+                                    await entryMemoryStream.CopyToAsync(tempFileStream);
                                 }
                             }
-                            catch (IOException e)
+                            catch (UnauthorizedAccessException e)
                             {
-
-                            }
-
-                            // If the file has not been seen before, use the parent's CPID.
-                            string collisionPriorityId = zipFile.CollisionPriorityId;
-                            if (!_hashToCollisionIdMap.TryAdd(fileUniqueKey, collisionPriorityId))
-                            {
-                                collisionPriorityId = _hashToCollisionIdMap[fileUniqueKey];
+                                _log.LogMessage($"Failed to extract '{fileName}' from '{archivePath}' to '{tempPath}': {e.ToString()}");
                             }
                         }
 
+                        string collisionPriorityId = UpdateCollisionPriorityIdMap(fileUniqueKey, zipFile);
+
+                        // Update the this zip info.
                         PathWithHash nestedFile = new PathWithHash(tempPath, contentHash);
-                        FileInfo nestedFileInfo = new FileInfo(nestedFile, zipFile.File, collisionPriorityId, null);
 
-                        nestedParts.Add(relativePath, new ZipPart(relativePath, fileSignInfo));
+                        var wixPack = _wixPacks.SingleOrDefault(w => w.Moniker.Equals(Path.GetFileName(tempPath), StringComparison.OrdinalIgnoreCase));
+                        FileInfo nestedFileInfo = new FileInfo(nestedFile, zipFile.File, collisionPriorityId, wixPack.FullPath);
 
-                        _log.LogMessage($"Extracting file '{fileName}' from '{archivePath}' to '{tempPath}'.");
-
-
-
-                        if (!_filesSignInfoByContentKey.TryGetValue(fileUniqueKey, out var fileSignInfo))
-                        {
-                            
-                            fileSignInfo = TrackFile(nestedFileInfo);
-                        }
-
-                        if (fileSignInfo.ShouldTrack)
-                        {
-                            
-                        }
+                        nestedParts.Add(relativePath, new ZipPart(relativePath, nestedFileInfo));
                     }
                 }
 
                 return new ZipData(zipFile, nestedParts.ToImmutableDictionary());
             }
+        }
+
+        private string UpdateCollisionPriorityIdMap(FileContentKey fileUniqueKey, FileInfo parent)
+        {
+            // Correctly set the collision priority ID.  
+            // The goal is that the collision priority ID is the value
+            // of the CPID of the lowest root asset.
+            // Again, there could be a race here. If we simply check the current value, compare to what
+            // the potential value is (parent zip's CPID), and update, if 3 files with CPID parents
+            // 3 2 1 come in, 2 could be the eventual value. So be sure about this,
+            // get the current value do a tryUpdate against the currentvalue/new value, until
+            // it stabilizes
+            string collisionPriorityId = parent.CollisionPriorityId;
+            if (!_hashToCollisionIdMap.TryAdd(fileUniqueKey, collisionPriorityId))
+            {
+                bool lowestValue = true;
+                do
+                {
+                    var existingCollisionId = _hashToCollisionIdMap[fileUniqueKey];
+
+                    // If we find that there is an asset which already was processed which has a lower
+                    // collision id, we use that and update the map so we give it precedence
+                    if (string.Compare(collisionPriorityId, existingCollisionId) < 0)
+                    {
+                        lowestValue = _hashToCollisionIdMap.TryUpdate(fileUniqueKey, collisionPriorityId, existingCollisionId);
+                    }
+                } while (!lowestValue);
+            }
+
+            return collisionPriorityId;
+        }
+
+        /// <summary>
+        /// Build up the <see cref="ZipData"/> instance for a given zip container. This will also report any consistency
+        /// errors found when examining the zip archive.
+        /// </summary>
+        private async Task<ZipData> TryBuildWixData(FileInfo msiFileInfo)
+        {
+            // Treat msi as an archive where the filename is the name of the msi, but its contents are from the corresponding wixpack
+            return await TryBuildZipData(msiFileInfo, msiFileInfo.WixContentFilePath);
         }
 
         // Input files are in order of collisionPriId. To ensure correctness,
@@ -467,37 +534,6 @@ namespace Microsoft.DotNet.SignTool
             if (_fileExtensionSignInfo != null)
             {
                 extension = _fileExtensionSignInfo.OrderByDescending(o => o.Key.Length).FirstOrDefault(f => file.FileName.EndsWith(f.Key, StringComparison.OrdinalIgnoreCase)).Key ?? extension;
-            }
-
-            // Asset is nested asset part of a container. Try to get it from the visited assets first
-            if (string.IsNullOrEmpty(collisionPriorityId) && parentContainer != null)
-            {
-                if (!_hashToCollisionIdMap.TryGetValue(signedFileContentKey, out collisionPriorityId))
-                {
-                    Debug.Assert(parentContainer.FullPath != file.FullPath);
-
-                    // Hash doesn't exist so we use the CollisionPriorityId from the parent container
-                    FileContentKey parentSignedFileContentKey =
-                        new FileContentKey(parentContainer.ContentHash, parentContainer.FileName);
-                    collisionPriorityId = _hashToCollisionIdMap[parentSignedFileContentKey];
-                }
-            }
-
-            // Update the hash map
-            if (_hashToCollisionIdMap.ContainsKey(signedFileContentKey) || !_hashToCollisionIdMap.TryAdd(signedFileContentKey, collisionPriorityId))
-            {
-                string existingCollisionId = _hashToCollisionIdMap[signedFileContentKey];
-
-                // If we find that there is an asset which already was processed which has a lower
-                // collision id, we use that and update the map so we give it precedence
-                if (string.Compare(collisionPriorityId, existingCollisionId) < 0)
-                {
-                    // This should never happen. We must process the inputs bucketized by their collision
-                    // IDs. Otherwise, the signing calculation for a file would change as more files are seen.
-
-                    throw new NotImplementedException();
-                    //_hashToCollisionIdMap[signedFileContentKey] = collisionPriorityId;
-                }
             }
 
             Debug.Assert(_hashToCollisionIdMap[signedFileContentKey] == collisionPriorityId);

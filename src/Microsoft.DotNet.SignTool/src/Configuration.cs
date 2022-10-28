@@ -246,7 +246,7 @@ namespace Microsoft.DotNet.SignTool
             {
                 // Only sign containers if the file itself is unsigned, or 
                 // an item in the container is unsigned.
-                hasSignableParts = _zipDataMap[fileSignInfo.FileContentKey].NestedParts.Values.Any(b => b.FileSignInfo.SignInfo.ShouldSign || b.FileSignInfo.HasSignableParts);
+                hasSignableParts = _zipDataMap[fileSignInfo.FileContentKey].NestedParts.Values.Any(b => b.FileInfo.SignInfo.ShouldSign || b.FileInfo.HasSignableParts);
                 if(hasSignableParts)
                 {
                     // If the file has contents that need to be signed, then re-evaluate the signing info

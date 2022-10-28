@@ -249,8 +249,8 @@ namespace Microsoft.DotNet.SignTool
                 if (file.FileInfo.IsContainer())
                 {
                     var zipData = _batchData.ZipDataMap[file.FileContentKey];
-                    return zipData.NestedParts.Values.All(x => (!x.FileSignInfo.SignInfo.ShouldSign ||
-                        trackedSet.Contains(x.FileSignInfo.FileContentKey)) && !toRepackSet.Contains(x.FileSignInfo.FullPath)
+                    return zipData.NestedParts.Values.All(x => (!x.FileInfo.SignInfo.ShouldSign ||
+                        trackedSet.Contains(x.FileInfo.FileContentKey)) && !toRepackSet.Contains(x.FileInfo.FullPath)
                         );
                 }
                 return true;
@@ -541,7 +541,7 @@ namespace Microsoft.DotNet.SignTool
                             continue;
                         }
 
-                        VerifyAfterSign(zipPart.Value.FileSignInfo);
+                        VerifyAfterSign(zipPart.Value.FileInfo);
                     }
                 }
 
