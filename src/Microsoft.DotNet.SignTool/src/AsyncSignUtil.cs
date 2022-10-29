@@ -6,12 +6,15 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Diagnostics.Contracts;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Build.Framework;
+using Microsoft.Build.Framework.XamlTypes;
+using static System.Net.WebRequestMethods;
 using ITaskItem = Microsoft.Build.Framework.ITaskItem;
 using TaskLoggingHelper = Microsoft.Build.Utilities.TaskLoggingHelper;
 
@@ -68,6 +71,8 @@ namespace Microsoft.DotNet.SignTool
 
         private readonly ConcurrentDictionary<FileContentKey, FileWithSignInfo> _filesSignInfoByContentKey;
 
+        private readonly ConcurrentDictionary<FileContentKey, Task> _signingTasksByContentKey;
+
         /// <summary>
         /// For each uniquely identified file keeps track of all containers where the file appeared.
         /// </summary>
@@ -102,6 +107,9 @@ namespace Microsoft.DotNet.SignTool
         /// </summary>
         internal ConcurrentDictionary<FileContentKey, string> _hashToCollisionIdMap;
 
+        private readonly IBuildEngine _buildEngine;
+        private readonly SignTool _signTool;
+
         private Telemetry _telemetry;
 
         // We must complete all unpack and examination tasks on all lower correlation IDs
@@ -111,7 +119,7 @@ namespace Microsoft.DotNet.SignTool
         // We can avoid a huge dictionary (due to a large number of files) by only tracking the top level files.
         // The required order of operations is that a file must have been unpacked recursively before it can
         // be examined, so by extension if the top level has had its examination, then we can proceed.
-        Dictionary<string, ConcurrentBag<Task>> _toplevelExaminationTasksByCorrelationId = new Dictionary<string, ConcurrentBag<Task>>();
+        Dictionary<string, List<Task>> _topLevelUnpackTasksByCollisionPriorityId = new Dictionary<string, List<Task>>();
 
         public AsyncSignUtil(
             string tempDir,
@@ -139,6 +147,7 @@ namespace Microsoft.DotNet.SignTool
             _filesToCopy = new ConcurrentBag<KeyValuePair<string, string>>();
             _zipDataMap = new ConcurrentDictionary<FileContentKey, Task<ZipData>>();
             _filesSignInfoByContentKey = new ConcurrentDictionary<FileContentKey, FileWithSignInfo>();
+            _signingTasksByContentKey = new ConcurrentDictionary<FileContentKey, Task>();
             _itemsToSign = itemsToSign;
             _dualCertificates = dualCertificates == null ? new ITaskItem[0] : dualCertificates;
             _parentContainerMapping = new ConcurrentDictionary<FileContentKey, HashSet<string>>();
@@ -183,21 +192,177 @@ namespace Microsoft.DotNet.SignTool
         /// <returns></returns>
         public async Task ProcessFile(FileInfo file, ConcurrentBag<Task> tasks, int depth)
         {
+            // A file may not be unpacked or examined if it has a higher than other tasks that are
+            // in the unpack stage. This means all top level unpack tasks should have been finished.
+            if (!string.IsNullOrEmpty(file.CollisionPriorityId))
+            {
+                // I'm not sure whether this is going to be slow or not. Number of keys in the dictionary is low.
+                // We could avoid the WhenAll by ref counting or something like that, or by removing
+                // completed tasks from the dictionary. Anyways since this only top level tasks, I'm hesitant
+                // to optimize until need be.
+                var tasksThatMustCompleteBeforeProcessing = _topLevelUnpackTasksByCollisionPriorityId
+                    .Where(kv => kv.Key.CompareTo(file.CollisionPriorityId) < 0)
+                    .Select(kv => kv.Value)
+                    .SelectMany(t => t);
 
-            List<Task> subTasks = new List<Task>();
+                _log.LogMessage($"File {file.File.FullPath} with CPID {file.CollisionPriorityId} waiting on {tasksThatMustCompleteBeforeProcessing.Count()} before continuing.");
+                await Task.WhenAll(tasksThatMustCompleteBeforeProcessing);
+            }
+
+            List<Task> examinationDependencies = new List<Task>();
             if (file.IsContainer())
             {
                 // Unpack and recurse on the sub items
-                var zipData = await Unpack(file);
-                
+                var unpackTask = Unpack(file);
+
+                if (file.CollisionPriorityId != null && depth == 0)
+                {
+                    // Add to top level tasks
+                    _topLevelUnpackTasksByCollisionPriorityId[file.CollisionPriorityId].Add(unpackTask);
+                }
+
+                var zipData = await unpackTask;
+
                 // Walk all nested parts and process.
                 foreach (var nestedFile in zipData.NestedParts)
                 {
-                    subTasks.Add(ProcessFile(nestedFile, tasks, depth + 1);
+                    // This isn't totally optimal here. It blocks examination on signing
+                    // and repacking of sub-dependencies, which is not exactly required.
+                    // Practically, it's prooobably fine, because examination is fast,
+                    // and you'd have to block on sign next anyway
+                    examinationDependencies.Add(ProcessFile(nestedFile.Value.FileInfo, tasks, depth + 1));
                 }
             }
 
-            var fileSignInfo = await Examine(file);
+            // Wait on the examinationDependencies before attempting to determine the signing
+            // certs. This is important because a container's signing cert (and whether it will be signed at all)
+            // can be dependent on the contents.
+
+            await Task.WhenAll(examinationDependencies);
+
+            var fileWithSignInfo = Examine(file);
+
+            if (fileWithSignInfo.ShouldRepack)
+            {
+                await Repack(fileWithSignInfo);
+            }
+
+            if (fileWithSignInfo.ShouldSign)
+            {
+                await Sign(fileWithSignInfo);
+            }
+        }
+
+        ReaderWriterLockSlim _signBatchAwaitersLock = new ReaderWriterLockSlim();
+        public Dictionary<int, (ConcurrentBag<FileWithSignInfo> batch, Task<bool> batchAwaiter)> _signBatchAwaiters =
+            new Dictionary<int, (ConcurrentBag<FileWithSignInfo>, Task<bool>)>()
+
+        public async Task Repack(FileWithSignInfo fileWithSignInfo)
+        {
+            
+        }
+
+        /// <summary>
+        /// Sign files
+        /// </summary>
+        /// <param name="fileWithSignInfo"></param>
+        /// <returns></returns>
+        public async Task<bool> Sign(FileWithSignInfo fileWithSignInfo)
+        {
+            EnsureAtLeastOneBatchAwaiter();
+
+            try
+            {
+                _signBatchAwaitersLock.EnterReadLock();
+
+                // Add the file to the last entry in the dictionary (based on Count)
+                var (batch, batchAwaiter) = _signBatchAwaiters[_signBatchAwaiters.Count];
+                batch.Add(fileWithSignInfo);
+                return await batchAwaiter;
+            }
+            finally
+            {
+                _signBatchAwaitersLock.ExitReadLock();
+            }
+        }
+
+        public void EnsureAtLeastOneBatchAwaiter()
+        {
+            if (_signBatchAwaiters.Count != 0)
+            {
+                return;
+            }
+
+            // Only add the sign batch awaiter if count is still 0 after entering the lock
+            AddNewBatchAwaiter(() => _signBatchAwaiters.Count == 0);
+        }
+
+        private void AddNewBatchAwaiter(Func<bool> pred = null)
+        {
+            // Enter the write lock and try again
+            try
+            {
+                _signBatchAwaitersLock.EnterWriteLock();
+
+                if (pred != null && pred())
+                {
+                    var newBatch = new ConcurrentBag<FileWithSignInfo>();
+                    var newBatchNumber = _signBatchAwaiters.Count;
+                    var newAwaiter = SignBatchAwaiter(newBatch, newBatchNumber);
+                    _signBatchAwaiters.Add(newBatchNumber, (newBatch, newAwaiter));
+                }
+            }
+            finally
+            {
+                _signBatchAwaitersLock.ExitWriteLock();
+            }
+        }
+
+        public const int _minBatchTriggerSize = 100;
+        public const int _maxIdleTimeInSeconds = 10;
+
+        public async Task<bool> SignBatchAwaiter(ConcurrentBag<FileWithSignInfo> files, int batch)
+        {
+            // There are two triggers for this batch:
+            // Ran over the minimum number of files
+            // was idle for more than N seconds.
+
+            int previousCount;
+            do
+            {
+                previousCount = files.Count;
+                await Task.Delay((int)TimeSpan.FromSeconds(_maxIdleTimeInSeconds).TotalMilliseconds);
+            }
+            while (files.Count < _minBatchTriggerSize && previousCount != files.Count);
+
+            // Create the new batch before flushing this one
+            AddNewBatchAwaiter();
+
+            // At this point, all new files are going to the next batch,
+            // And this can be signed and finished.
+
+            return await SignBatch(files, batch);
+        }
+
+        public Task<bool> SignBatch(IEnumerable<FileWithSignInfo> files, int batch)
+        {
+            _log.LogMessage(MessageImportance.High, $"Batch {batch}: Signing {files.Length} files.");
+
+            foreach (var file in files)
+            {
+                string collisionIdInfo = string.Empty;
+                if (_hashToCollisionIdMap != null)
+                {
+                    if (_hashToCollisionIdMap.TryGetValue(file.FileInfo.FileContentKey, out string collisionPriorityId))
+                    {
+                        collisionIdInfo = $"Collision Id='{collisionPriorityId}'";
+                    }
+
+                }
+                _log.LogMessage(MessageImportance.Low, $"{file} {collisionIdInfo}");
+            }
+
+            return Task.FromResult(_signTool.Sign(_buildEngine, batch, files));
         }
 
         public SemaphoreSlim _unpackThrottle = new SemaphoreSlim(4, 4);
@@ -277,250 +442,35 @@ namespace Microsoft.DotNet.SignTool
             }
         }
 
-        public async Task<FileWithSignInfo> Examine(FileInfo file, ConcurrentBag<Task> dependencies)
+        public FileWithSignInfo Examine(FileInfo fileToExamine)
         {
-            await Task.WhenAll(dependencies);
-        }
-
-        private List<FileInfo> CreateInitialnputList()
-        {
-            // First, create the initial list of items that will go into the unpack processor
-            // Because items with a lower CPID must have their certs determined BEFORE any items with
-            // a higher CPID, sort descending, then push onto the stack.
-
-            var filesToProcess = new List<FileInfo>();
-
-            foreach (var itemToSign in _itemsToSign)
+            // If the file's signing info has already been computed, no need to do anything.
+            // This is largely an optimization. ComputeSigningInfo does not mutate state.
+            if (_filesSignInfoByContentKey.TryGetValue(fileToExamine.FileContentKey, out var fileWIthSignInfo))
             {
-                string fullPath = itemToSign.ItemSpec;
-                string collisionPriorityId = itemToSign.GetMetadata(SignToolConstants.CollisionPriorityId);
-                var contentHash = ContentUtil.GetContentHash(fullPath);
-                var fileUniqueKey = new FileContentKey(contentHash, Path.GetFileName(fullPath));
-                PathWithHash pathWithHash = new PathWithHash(fullPath, contentHash);
-
-                // If there's a wixpack in ItemsToSign which corresponds to this file, pass along the path of 
-                // the wixpack so we can associate the wixpack with the item
-                var wixPack = _wixPacks.SingleOrDefault(w => w.Moniker.Equals(Path.GetFileName(fullPath), StringComparison.OrdinalIgnoreCase));
-
-                AddParentContainerMapping(fullPath, fileUniqueKey);
-
-                if (!string.IsNullOrEmpty(collisionPriorityId) &&
-                    !_toplevelExaminationTasksByCorrelationId.ContainsKey(collisionPriorityId))
-                {
-                    _toplevelExaminationTasksByCorrelationId.Add(collisionPriorityId, new ConcurrentBag<Task>());
-                }
-
-                filesToProcess.Add(new FileInfo(pathWithHash, null, collisionPriorityId, wixPack.FullPath));
+                return fileWIthSignInfo;
             }
 
-            return filesToProcess.OrderBy(f => f.CollisionPriorityId).ToList();
-        }
+            var signingInfo = ComputeSigningInfo(fileToExamine);
 
-        /// <summary>
-        /// Build up the <see cref="ZipData"/> instance for a given zip container. This will also report any consistency
-        /// errors found when examining the zip archive.
-        /// </summary>
-        private async Task<ZipData> TryBuildZipData(FileInfo zipFile, string alternativeArchivePath = null)
-        {
-            string archivePath = zipFile.File.FullPath;
-            if (alternativeArchivePath != null)
+            // Add to map or return value current in the map.
+            if (_filesSignInfoByContentKey.TryAdd(fileToExamine.FileContentKey, signingInfo))
             {
-                archivePath = alternativeArchivePath;
-                Debug.Assert(Path.GetExtension(archivePath) == ".zip");
+                return signingInfo;
             }
             else
             {
-                Debug.Assert(zipFile.IsZipContainer());
-            }
-
-            // Because there is a possibility of 
-            using (var archive = new ZipArchive(File.OpenRead(archivePath), ZipArchiveMode.Read))
-            {
-                var nestedParts = new Dictionary<string, ZipPart>();
-
-                foreach (ZipArchiveEntry entry in archive.Entries)
-                {
-                    string relativePath = entry.FullName; // lgtm [cs/zipslip] Archive from trusted source
-
-                    // `entry` might be just a pointer to a folder. We skip those.
-                    if (relativePath.EndsWith("/") && entry.Name == "")
-                    {
-                        continue;
-                    }
-
-                    // Before we go any farther, decide whether we need to at all. A file that is
-                    // not signable need not be unpacked.
-                    if (!FileInfo.IsSignableFile(relativePath))
-                    {
-                        continue;
-                    }
-
-                    using (var entryStream = entry.Open())
-                    using (MemoryStream entryMemoryStream = new MemoryStream((int)entry.Length))
-                    {
-                        // We have to open the file so that we can get at the content hash
-                        await entryStream.CopyToAsync(entryMemoryStream);
-                        entryMemoryStream.Position = 0;
-                        ImmutableArray<byte> contentHash = ContentUtil.GetContentHash(entryMemoryStream);
-
-                        var fileUniqueKey = new FileContentKey(contentHash, Path.GetFileName(relativePath));
-
-                        AddParentContainerMapping(Path.GetFileName(archivePath), fileUniqueKey);
-
-                        var fileName = Path.GetFileName(relativePath);
-
-                        // Determine whether the file has already been extracted
-                        string extractPathRoot = fileUniqueKey.StringHash;
-                        string tempPath = Path.Combine(_pathToContainerUnpackingDirectory, extractPathRoot, relativePath);
-
-                        // This could race, but only one thread will end up with the OpenWrite
-                        // handle. Catch the UnauthorizedAccessException if the file couldn't be written.
-                        // We could lock here, but it should be unnecessary.
-                        if (!File.Exists(tempPath))
-                        {
-                            _log.LogMessage($"Extracting file '{fileName}' from '{archivePath}' to '{tempPath}'.");
-
-                            try
-                            {
-                                Directory.CreateDirectory(Path.GetDirectoryName(tempPath));
-
-                                entryMemoryStream.Position = 0;
-                                using (var tempFileStream = File.OpenWrite(tempPath))
-                                {
-                                    await entryMemoryStream.CopyToAsync(tempFileStream);
-                                }
-                            }
-                            catch (UnauthorizedAccessException e)
-                            {
-                                _log.LogMessage($"Failed to extract '{fileName}' from '{archivePath}' to '{tempPath}': {e.ToString()}");
-                            }
-                        }
-
-                        string collisionPriorityId = UpdateCollisionPriorityIdMap(fileUniqueKey, zipFile);
-
-                        // Update the this zip info.
-                        PathWithHash nestedFile = new PathWithHash(tempPath, contentHash);
-
-                        var wixPack = _wixPacks.SingleOrDefault(w => w.Moniker.Equals(Path.GetFileName(tempPath), StringComparison.OrdinalIgnoreCase));
-                        FileInfo nestedFileInfo = new FileInfo(nestedFile, zipFile.File, collisionPriorityId, wixPack.FullPath);
-
-                        nestedParts.Add(relativePath, new ZipPart(relativePath, nestedFileInfo));
-                    }
-                }
-
-                return new ZipData(zipFile, nestedParts.ToImmutableDictionary());
+                return _filesSignInfoByContentKey[fileToExamine.FileContentKey];
             }
         }
 
-        private string UpdateCollisionPriorityIdMap(FileContentKey fileUniqueKey, FileInfo parent)
+        private FileWithSignInfo ComputeSigningInfo(FileInfo fileToExamine)
         {
-            // Correctly set the collision priority ID.  
-            // The goal is that the collision priority ID is the value
-            // of the CPID of the lowest root asset.
-            // Again, there could be a race here. If we simply check the current value, compare to what
-            // the potential value is (parent zip's CPID), and update, if 3 files with CPID parents
-            // 3 2 1 come in, 2 could be the eventual value. So be sure about this,
-            // get the current value do a tryUpdate against the currentvalue/new value, until
-            // it stabilizes
-            string collisionPriorityId = parent.CollisionPriorityId;
-            if (!_hashToCollisionIdMap.TryAdd(fileUniqueKey, collisionPriorityId))
-            {
-                bool lowestValue = true;
-                do
-                {
-                    var existingCollisionId = _hashToCollisionIdMap[fileUniqueKey];
+            PathWithHash file = fileToExamine.File;
+            PathWithHash parentContainer = fileToExamine.ParentContainer;
+            string collisionPriorityId = fileToExamine.CollisionPriorityId;
 
-                    // If we find that there is an asset which already was processed which has a lower
-                    // collision id, we use that and update the map so we give it precedence
-                    if (string.Compare(collisionPriorityId, existingCollisionId) < 0)
-                    {
-                        lowestValue = _hashToCollisionIdMap.TryUpdate(fileUniqueKey, collisionPriorityId, existingCollisionId);
-                    }
-                } while (!lowestValue);
-            }
-
-            return collisionPriorityId;
-        }
-
-        /// <summary>
-        /// Build up the <see cref="ZipData"/> instance for a given zip container. This will also report any consistency
-        /// errors found when examining the zip archive.
-        /// </summary>
-        private async Task<ZipData> TryBuildWixData(FileInfo msiFileInfo)
-        {
-            // Treat msi as an archive where the filename is the name of the msi, but its contents are from the corresponding wixpack
-            return await TryBuildZipData(msiFileInfo, msiFileInfo.WixContentFilePath);
-        }
-
-        // Input files are in order of collisionPriId. To ensure correctness,
-        // we MUST compute signing info for all lower collision ids's before higher ones begin.
-        // The reason is that the signing info for lower IDs dominates those of higher IDs.
-        // An artifact that shows up in two nupkgs comes is assumed to come from the one with the lower
-        // ID (if one is lower), and thus the signing info associated with that ID takes precedence.
-
-        // By convention, we must have started the sig computation for all 
-        // task.whenall
-
-        // THe problem here is that, let's say you have two input files to process.
-        // The first is from CID=0, the second from 1.
-        // If you Task.Parallel you absolutely could process the second before the first. So you need to wait on the first,
-        // but you ONLY need to wait on the unpack/compute sig parts. You can absolutely race ahead otherwise.
-        // This is non-trivial to implement because you don't have an easy thing to wait on. You haven't started the unpack task of the first
-        // container. So you are left to implement some kind of wait loop there. While the algorithm MIGHT be cleaner...I'm not sure how
-        // to do this.
-        // There are potentially other ways of solving this. You could use the algo as specified, but backtrack if the key changes.
-        // But no, that sucks because you have to backtrack an arbitrary number of spaces.
-        //
-        // In the other, stack based method, you might be able to solve this problem with another stack.
-        // You have a:
-        // - Unpack stack
-        // - Computation stack
-        // - Sign stack
-        // - Repack stack
-        //
-        // In this method, the computation stack processing must stop if the CPID of the file in any new files **could**
-        // be introduced into the CPID stack that are of lower ID. So basically, all unpacking of lower IDs must be done.
-        // This gets tough? You could implement a wait until all unpack/computation is done. OR, you could say that collisions
-        // are quite rare. When you find a CPID for a file that is lower (like the original algo did), you recompute, then re-add the
-        // parent to the pack list if already packed, etc.? Tough for sure. I don't know how you deal with that and parallelism.
-        // What if it's not packed but on the list? That means the first computation would be wrong, the submit signing....Or you could eve
-        // have the case where the first and second are next to each other in the queue and they process in parallel. bad.
-        // Maybe the right thing IS to just do a wait for all top-level unpack and computation in CPID's < current to be done. Because
-        // files are processed mostly sequentually, I think you'd end up with minimal wait time without the async await difficulties.
-        // I suppose the Q is how do you know when unpack compute is done? You do a bag (or just a ref count) per CPID and every time
-        // you pull a new top level item off the list you increment the ref count.
-
-        private void AddParentContainerMapping(string fullPath, FileContentKey fileUniqueKey)
-        {
-            if (!_parentContainerMapping.TryGetValue(fileUniqueKey, out var packages))
-            {
-                packages = new HashSet<string>();
-            }
-
-            packages.Add(fullPath);
-
-            _parentContainerMapping[fileUniqueKey] = packages;
-        }
-
-        #region Sign info extration
-
-        /// <summary>
-        /// Determine the file signing info of this file.
-        /// </summary>
-        /// <param name="fileToProcess"></param>
-        /// <param name="parentContainer"></param>
-        /// <param name="collisionPriorityId"></param>
-        /// <param name="wixContentFilePath"></param>
-        /// <returns></returns>
-        private FileWithSignInfo ExtractSignInfo(
-            FileInfo fileToProcess,
-            string wixContentFilePath)
-        {
-            PathWithHash file = fileToProcess.File;
-            PathWithHash parentContainer = fileToProcess.ParentContainer;
-            string collisionPriorityId = fileToProcess.CollisionPriorityId;
-
-            var extension = Path.GetExtension(fileToProcess.File.FileName);
+            var extension = Path.GetExtension(fileToExamine.File.FileName);
             string explicitCertificateName = null;
             var fileSpec = string.Empty;
             var isAlreadySigned = false;
@@ -654,7 +604,7 @@ namespace Microsoft.DotNet.SignTool
             if (SignToolConstants.IgnoreFileCertificateSentinel.Equals(explicitCertificateName, StringComparison.OrdinalIgnoreCase))
             {
                 _log.LogMessage(MessageImportance.Low, $"File configured to not be signed: {file.FullPath}{fileSpec}");
-                return new FileWithSignInfo(fileToProcess, SignInfo.Ignore);
+                return new FileWithSignInfo(fileToExamine, SignInfo.Ignore);
             }
 
             // Do we have an explicit certificate after all?
@@ -662,6 +612,27 @@ namespace Microsoft.DotNet.SignTool
             {
                 signInfo = signInfo.WithCertificateName(explicitCertificateName, collisionPriorityId);
                 hasSignInfo = true;
+            }
+
+            // Only sign containers if the file itself is unsigned, or 
+            // an item in the container is unsigned. If the file is already signed but
+            // has parts that need signing, then the container itself will have its signature invalidated
+            // and will need to be re-signed.
+            bool hasSignableParts = false;
+
+            if (fileToExamine.IsContainer())
+            {
+                var zipData = await _zipDataMap[fileToExamine.FileContentKey];
+                hasSignableParts = zipData.NestedParts.Values.Any(b =>
+                {
+                    var signInfo = _filesSignInfoByContentKey[b.FileInfo.FileContentKey];
+                    return signInfo.ShouldSign || signInfo.HasSignableParts;
+                });
+
+                if (hasSignableParts)
+                {
+                    isAlreadySigned = false;
+                }
             }
 
             if (hasSignInfo)
@@ -673,7 +644,7 @@ namespace Microsoft.DotNet.SignTool
 
                 if (isAlreadySigned && !dualCerts)
                 {
-                    return new FileWithSignInfo(fileToProcess, signInfo.WithIsAlreadySigned(isAlreadySigned));
+                    return new FileWithSignInfo(fileToExamine, signInfo.WithIsAlreadySigned(isAlreadySigned));
                 }
 
                 if (signInfo.ShouldSign && peInfo != null)
@@ -708,7 +679,11 @@ namespace Microsoft.DotNet.SignTool
                     }
                 }
 
-                return new FileWithSignInfo(fileToProcess, signInfo, (peInfo != null && peInfo.TargetFramework != "") ? peInfo.TargetFramework : null);
+                return new FileWithSignInfo(
+                    fileInfo: fileToExamine,
+                    signInfo: signInfo,
+                    targetFramework: (peInfo != null && peInfo.TargetFramework != "") ? peInfo.TargetFramework : null,
+                    hasSignableParts: hasSignableParts);
             }
 
             if (SignToolConstants.SignableExtensions.Contains(extension) || SignToolConstants.SignableOSXExtensions.Contains(extension))
@@ -721,10 +696,234 @@ namespace Microsoft.DotNet.SignTool
                 _log.LogMessage(MessageImportance.Low, $"Ignoring non-signable file: {file.FullPath}");
             }
 
-            return new FileWithSignInfo(fileToProcess, SignInfo.Ignore);
+            return new FileWithSignInfo(fileInfo: fileToExamine, signInfo: SignInfo.Ignore);
         }
 
-        #endregion
+        private List<FileInfo> CreateInitialnputList()
+        {
+            // First, create the initial list of items that will go into the unpack processor
+            // Because items with a lower CPID must have their certs determined BEFORE any items with
+            // a higher CPID, sort descending, then push onto the stack.
+
+            var filesToProcess = new List<FileInfo>();
+
+            bool? allNullCPIDs = null;
+
+            Dictionary<FileContentKey, FileInfo> _topLevelFileInfos = new Dictionary<FileContentKey, FileInfo>();
+
+            foreach (var itemToSign in _itemsToSign)
+            {
+                string collisionPriorityId = itemToSign.GetMetadata(SignToolConstants.CollisionPriorityId);
+                string fullPath = itemToSign.ItemSpec;
+                var contentHash = ContentUtil.GetContentHash(fullPath);
+                var fileUniqueKey = new FileContentKey(contentHash, Path.GetFileName(fullPath));
+                PathWithHash pathWithHash = new PathWithHash(fullPath, contentHash);
+
+                AddParentContainerMapping(fullPath, fileUniqueKey);
+
+                // If we've seen other CPIDs and one is null, then error
+                if (allNullCPIDs.HasValue && string.IsNullOrEmpty(collisionPriorityId) != allNullCPIDs.Value)
+                {
+                    throw new Exception("All input assets should have all CPIDs, or none should.");
+                }
+
+                allNullCPIDs = string.IsNullOrEmpty(collisionPriorityId);
+
+                if (!string.IsNullOrEmpty(collisionPriorityId) && !_topLevelUnpackTasksByCollisionPriorityId.ContainsKey(collisionPriorityId))
+                {
+                    _topLevelUnpackTasksByCollisionPriorityId.Add(collisionPriorityId, new List<Task>());
+                }
+
+                // If there's a wixpack in ItemsToSign which corresponds to this file, pass along the path of 
+                // the wixpack so we can associate the wixpack with the item
+                var wixPack = _wixPacks.SingleOrDefault(w => w.Moniker.Equals(Path.GetFileName(fullPath), StringComparison.OrdinalIgnoreCase));
+                var newFileInfo = new FileInfo(pathWithHash, null, collisionPriorityId, wixPack.FullPath);
+
+                // It's easily possible to have two files with different names but identical contents at the top level. Normally,
+                // this would be transparently handled in containers by de-duplication when unpacking, but the top level doesn't
+                // run through that. Instead, we keep a list of files to copy at the end.
+                if (_topLevelFileInfos.TryGetValue(fileUniqueKey, out FileInfo existingFileInfo))
+                {
+                    // Copy the signed content to the destination path.
+                    _filesToCopy.Add(new KeyValuePair<string, string>(existingFileInfo.File.FullPath, newFileInfo.File.FullPath));
+                }
+                else
+                {
+                    _topLevelFileInfos.Add(fileUniqueKey, newFileInfo);
+                    filesToProcess.Add(newFileInfo);
+                }
+            }
+            return filesToProcess.OrderBy(f => f.CollisionPriorityId).ToList();
+        }
+
+        /// <summary>
+        /// Build up the <see cref="ZipData"/> instance for a given zip container. This will also report any consistency
+        /// errors found when examining the zip archive.
+        /// </summary>
+        private async Task<ZipData> TryBuildZipData(FileInfo zipFile, string alternativeArchivePath = null)
+        {
+            string archivePath = zipFile.File.FullPath;
+            if (alternativeArchivePath != null)
+            {
+                archivePath = alternativeArchivePath;
+                Debug.Assert(Path.GetExtension(archivePath) == ".zip");
+            }
+            else
+            {
+                Debug.Assert(zipFile.IsZipContainer());
+            }
+
+            // Because there is a possibility of 
+            using (var archive = new ZipArchive(File.OpenRead(archivePath), ZipArchiveMode.Read))
+            {
+                var nestedParts = new Dictionary<string, ZipPart>();
+
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                {
+                    string relativePath = entry.FullName; // lgtm [cs/zipslip] Archive from trusted source
+
+                    // `entry` might be just a pointer to a folder. We skip those.
+                    if (relativePath.EndsWith("/") && entry.Name == "")
+                    {
+                        continue;
+                    }
+
+                    // Before we go any farther, decide whether we need to at all. A file that is
+                    // not signable need not be unpacked.
+                    if (!FileInfo.IsSignableFile(relativePath))
+                    {
+                        continue;
+                    }
+
+                    using (var entryStream = entry.Open())
+                    using (MemoryStream entryMemoryStream = new MemoryStream((int)entry.Length))
+                    {
+                        // We have to open the file so that we can get at the content hash
+                        await entryStream.CopyToAsync(entryMemoryStream);
+                        entryMemoryStream.Position = 0;
+                        ImmutableArray<byte> contentHash = ContentUtil.GetContentHash(entryMemoryStream);
+
+                        var fileUniqueKey = new FileContentKey(contentHash, Path.GetFileName(relativePath));
+
+                        AddParentContainerMapping(Path.GetFileName(archivePath), fileUniqueKey);
+
+                        var fileName = Path.GetFileName(relativePath);
+
+                        // Determine whether the file has already been extracted
+                        string extractPathRoot = fileUniqueKey.StringHash;
+                        string tempPath = Path.Combine(_pathToContainerUnpackingDirectory, extractPathRoot, relativePath);
+
+                        // This could race, but only one thread will end up with the OpenWrite
+                        // handle. Catch the UnauthorizedAccessException if the file couldn't be written.
+                        // We could lock here, but it should be unnecessary.
+                        if (!File.Exists(tempPath))
+                        {
+                            _log.LogMessage($"Extracting file '{fileName}' from '{archivePath}' to '{tempPath}'.");
+
+                            try
+                            {
+                                Directory.CreateDirectory(Path.GetDirectoryName(tempPath));
+
+                                entryMemoryStream.Position = 0;
+                                using (var tempFileStream = File.OpenWrite(tempPath))
+                                {
+                                    await entryMemoryStream.CopyToAsync(tempFileStream);
+                                }
+                            }
+                            catch (UnauthorizedAccessException e)
+                            {
+                                _log.LogMessage($"Failed to extract '{fileName}' from '{archivePath}' to '{tempPath}': {e.ToString()}");
+                            }
+                        }
+
+                        string collisionPriorityId = UpdateCollisionPriorityIdMap(fileUniqueKey, zipFile);
+
+                        // Update the this zip info.
+                        PathWithHash nestedFile = new PathWithHash(tempPath, contentHash);
+
+                        var wixPack = _wixPacks.SingleOrDefault(w => w.Moniker.Equals(Path.GetFileName(tempPath), StringComparison.OrdinalIgnoreCase));
+                        FileInfo nestedFileInfo = new FileInfo(nestedFile, zipFile.File, collisionPriorityId, wixPack.FullPath);
+
+                        nestedParts.Add(relativePath, new ZipPart(relativePath, nestedFileInfo));
+                    }
+                }
+
+                return new ZipData(zipFile, nestedParts.ToImmutableDictionary());
+            }
+        }
+
+        private string UpdateCollisionPriorityIdMap(FileContentKey fileUniqueKey, FileInfo parent)
+        {
+            // Correctly set the collision priority ID.
+            string collisionPriorityId = parent.CollisionPriorityId;
+            if (!_hashToCollisionIdMap.TryAdd(fileUniqueKey, collisionPriorityId))
+            {
+                Debug.Assert(_hashToCollisionIdMap[fileUniqueKey].CompareTo(collisionPriorityId) <= 0);
+                collisionPriorityId = _hashToCollisionIdMap[fileUniqueKey];
+            }
+
+            return collisionPriorityId;
+        }
+
+        /// <summary>
+        /// Build up the <see cref="ZipData"/> instance for a given zip container. This will also report any consistency
+        /// errors found when examining the zip archive.
+        /// </summary>
+        private async Task<ZipData> TryBuildWixData(FileInfo msiFileInfo)
+        {
+            // Treat msi as an archive where the filename is the name of the msi, but its contents are from the corresponding wixpack
+            return await TryBuildZipData(msiFileInfo, msiFileInfo.WixContentFilePath);
+        }
+
+        // Input files are in order of collisionPriId. To ensure correctness,
+        // we MUST compute signing info for all lower collision ids's before higher ones begin.
+        // The reason is that the signing info for lower IDs dominates those of higher IDs.
+        // An artifact that shows up in two nupkgs comes is assumed to come from the one with the lower
+        // ID (if one is lower), and thus the signing info associated with that ID takes precedence.
+
+        // By convention, we must have started the sig computation for all 
+        // task.whenall
+
+        // THe problem here is that, let's say you have two input files to process.
+        // The first is from CID=0, the second from 1.
+        // If you Task.Parallel you absolutely could process the second before the first. So you need to wait on the first,
+        // but you ONLY need to wait on the unpack/compute sig parts. You can absolutely race ahead otherwise.
+        // This is non-trivial to implement because you don't have an easy thing to wait on. You haven't started the unpack task of the first
+        // container. So you are left to implement some kind of wait loop there. While the algorithm MIGHT be cleaner...I'm not sure how
+        // to do this.
+        // There are potentially other ways of solving this. You could use the algo as specified, but backtrack if the key changes.
+        // But no, that sucks because you have to backtrack an arbitrary number of spaces.
+        //
+        // In the other, stack based method, you might be able to solve this problem with another stack.
+        // You have a:
+        // - Unpack stack
+        // - Computation stack
+        // - Sign stack
+        // - Repack stack
+        //
+        // In this method, the computation stack processing must stop if the CPID of the file in any new files **could**
+        // be introduced into the CPID stack that are of lower ID. So basically, all unpacking of lower IDs must be done.
+        // This gets tough? You could implement a wait until all unpack/computation is done. OR, you could say that collisions
+        // are quite rare. When you find a CPID for a file that is lower (like the original algo did), you recompute, then re-add the
+        // parent to the pack list if already packed, etc.? Tough for sure. I don't know how you deal with that and parallelism.
+        // What if it's not packed but on the list? That means the first computation would be wrong, the submit signing....Or you could eve
+        // have the case where the first and second are next to each other in the queue and they process in parallel. bad.
+        // Maybe the right thing IS to just do a wait for all top-level unpack and computation in CPID's < current to be done. Because
+        // files are processed mostly sequentually, I think you'd end up with minimal wait time without the async await difficulties.
+        // I suppose the Q is how do you know when unpack compute is done? You do a bag (or just a ref count) per CPID and every time
+        // you pull a new top level item off the list you increment the ref count.
+
+        private void AddParentContainerMapping(string fullPath, FileContentKey fileUniqueKey)
+        {
+            if (!_parentContainerMapping.TryGetValue(fileUniqueKey, out var packages))
+            {
+                packages = new HashSet<string>();
+            }
+
+            packages.Add(fullPath);
+
+            _parentContainerMapping[fileUniqueKey] = packages;
+        }
 
         #region Logging
 

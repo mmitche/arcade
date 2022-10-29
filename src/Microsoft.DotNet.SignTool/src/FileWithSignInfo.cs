@@ -24,6 +24,8 @@ namespace Microsoft.DotNet.SignTool
 
         internal bool ShouldTrack => SignInfo.ShouldSign || ShouldRepack;
 
+        internal bool ShouldSign => SignInfo.ShouldSign;
+
         internal FileWithSignInfo(FileInfo fileInfo, SignInfo signInfo, string targetFramework = null, bool hasSignableParts = false)
         {
             Debug.Assert(fileInfo.File.FullPath != null);
