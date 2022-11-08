@@ -16,7 +16,7 @@ namespace Microsoft.DotNet.SignTool
             ParentContainer = parentContainer;
             CollisionPriorityId = collisionPriorityId;
             WixContentFilePath = wixContentFilePath;
-            FileContentKey = new FileContentKey(fileInfo.File.ContentHash, FileInfo.File.FileName);
+            FileContentKey = new FileContentKey(file.ContentHash, file.FileName);
         }
 
         public readonly PathWithHash File;

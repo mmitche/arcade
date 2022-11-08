@@ -84,7 +84,7 @@ namespace Microsoft.DotNet.SignTool
                 return path;
             }
             
-            using (var package = Package.Open(FileInfo.FullPath, FileMode.Open, FileAccess.ReadWrite))
+            using (var package = Package.Open(FileInfo.File.FullPath, FileMode.Open, FileAccess.ReadWrite))
             {
                 foreach (var part in package.GetParts())
                 {
@@ -92,14 +92,14 @@ namespace Microsoft.DotNet.SignTool
                     var signedPart = FindNestedPart(relativeName);
                     if (!signedPart.HasValue)
                     {
-                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {FileInfo.FullPath} -> {relativeName}");
+                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {FileInfo.File.FullPath} -> {relativeName}");
                         continue;
                     }
 
-                    using (var signedStream = File.OpenRead(signedPart.Value.FileInfo.FullPath))
+                    using (var signedStream = File.OpenRead(signedPart.Value.FileInfo.File.FullPath))
                     using (var partStream = part.GetStream(FileMode.Open, FileAccess.ReadWrite))
                     {
-                        log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.FullPath} to {FileInfo.FullPath} -> {relativeName}.");
+                        log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.File.FullPath} to {FileInfo.File.FullPath} -> {relativeName}.");
 
                         signedStream.CopyTo(partStream);
                         partStream.SetLength(signedStream.Length);
@@ -168,12 +168,12 @@ namespace Microsoft.DotNet.SignTool
                         continue;
                     }
                     log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.FullPath} to {file}.");
-                    File.Copy(signedPart.Value.FileInfo.FullPath, file, true);
+                    File.Copy(signedPart.Value.FileInfo.File.FullPath, file, true);
                 }
 
                 if (!BatchSignUtil.RunWixTool(createFileName, outputDir, workingDir, wixToolsPath, log))
                 {
-                    log.LogError($"Packaging of wix file '{FileInfo.FullPath}' failed");
+                    log.LogError($"Packaging of wix file '{FileInfo.File.FullPath}' failed");
                     return;
                 }
 
@@ -184,7 +184,7 @@ namespace Microsoft.DotNet.SignTool
                 }
 
                 log.LogMessage($"Created wix file {outputFileName}, replacing '{FileInfo.FullPath}' with '{outputFileName}'");
-                File.Copy(outputFileName, FileInfo.FullPath, true);
+                File.Copy(outputFileName, FileInfo.File.FullPath, true);
             }
             finally
             {

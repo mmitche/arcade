@@ -255,11 +255,11 @@ namespace Microsoft.DotNet.SignTool
 
         ReaderWriterLockSlim _signBatchAwaitersLock = new ReaderWriterLockSlim();
         public Dictionary<int, (ConcurrentBag<FileWithSignInfo> batch, Task<bool> batchAwaiter)> _signBatchAwaiters =
-            new Dictionary<int, (ConcurrentBag<FileWithSignInfo>, Task<bool>)>()
+            new Dictionary<int, (ConcurrentBag<FileWithSignInfo>, Task<bool>)>();
 
         public async Task Repack(FileWithSignInfo fileWithSignInfo)
         {
-            
+            return Task.CompletedTask;
         }
 
         /// <summary>
