@@ -77,7 +77,7 @@ namespace Microsoft.DotNet.SignTool
             // This is a recursive process since we process nested containers.
             foreach (var file in _batchData.FilesToSign)
             {
-                VerifyAfterSign(file);
+                VerifyAfterSign(file.FileInfo);
             }
 
             if (_log.HasLoggedErrors)
@@ -126,7 +126,7 @@ namespace Microsoft.DotNet.SignTool
                     string collisionIdInfo = string.Empty;
                     if(_hashToCollisionIdMap != null)
                     {
-                        if(_hashToCollisionIdMap.TryGetValue(file.FileContentKey, out string collisionPriorityId))
+                        if(_hashToCollisionIdMap.TryGetValue(file.FileInfo.FileContentKey, out string collisionPriorityId))
                         {
                             collisionIdInfo = $"Collision Id='{collisionPriorityId}'";
                         }
@@ -227,12 +227,12 @@ namespace Microsoft.DotNet.SignTool
                     if (file.FileInfo.IsZipContainer())
                     {
                         _log.LogMessage($"Repacking container: '{file.FileName}'");
-                        _batchData.ZipDataMap[file.FileContentKey].Repack(_log);
+                        _batchData.ZipDataMap[file.FileInfo.FileContentKey].Repack(_log);
                     }
                     else if (file.FileInfo.IsWixContainer())
                     {
                         _log.LogMessage($"Packing wix container: '{file.FileName}'");
-                        _batchData.ZipDataMap[file.FileContentKey].Repack(_log, _signTool.TempDir, _signTool.WixToolsPath);
+                        _batchData.ZipDataMap[file.FileInfo.FileContentKey].Repack(_log, _signTool.TempDir, _signTool.WixToolsPath);
                     }
                     else
                     {
@@ -248,9 +248,9 @@ namespace Microsoft.DotNet.SignTool
             {
                 if (file.FileInfo.IsContainer())
                 {
-                    var zipData = _batchData.ZipDataMap[file.FileContentKey];
-                    return zipData.NestedParts.Values.All(x => (!x.FileInfo.SignInfo.ShouldSign ||
-                        trackedSet.Contains(x.FileInfo.FileContentKey)) && !toRepackSet.Contains(x.FileInfo.FullPath)
+                    var zipData = _batchData.ZipDataMap[file.FileInfo.FileContentKey];
+                    return zipData.NestedParts.Values.All(x => (!_batchData.FileSignInfoByContentKey[x.FileInfo.FileContentKey].SignInfo.ShouldSign ||
+                        trackedSet.Contains(x.FileInfo.FileContentKey)) && !toRepackSet.Contains(x.FileInfo.File.FullPath)
                         );
                 }
                 return true;
@@ -335,7 +335,7 @@ namespace Microsoft.DotNet.SignTool
                         telemetrySignedTime.Stop();
                     }
 
-                    trackList.ForEach(x => trackedSet.Add(x.FileContentKey));
+                    trackList.ForEach(x => trackedSet.Add(x.FileInfo.FileContentKey));
                 }
             }
             finally
@@ -487,37 +487,35 @@ namespace Microsoft.DotNet.SignTool
             }
         }
 
-        private void VerifyAfterSign(FileWithSignInfo file)
+        private void VerifyAfterSign(FileInfo fileInfo)
         {
-            FileInfo fileInfo = file.FileInfo;
-
             if (fileInfo.IsPEFile())
             {
-                using (var stream = File.OpenRead(file.FullPath))
+                using (var stream = File.OpenRead(fileInfo.File.FullPath))
                 {
                     if (!_signTool.VerifySignedPEFile(stream))
                     {
-                        _log.LogError($"Assembly {file.FullPath} is NOT signed properly");
+                        _log.LogError($"Assembly {fileInfo.File.FullPath} is NOT signed properly");
                     }
                     else
                     {
-                        _log.LogMessage(MessageImportance.Low, $"Assembly {file.FullPath} is signed properly");
+                        _log.LogMessage(MessageImportance.Low, $"Assembly {fileInfo.File.FullPath} is signed properly");
                     }
                 }
             }
             else if (fileInfo.IsPowerShellScript())
             {
-                if (!_signTool.VerifySignedPowerShellFile(file.FullPath))
+                if (!_signTool.VerifySignedPowerShellFile(fileInfo.File.FullPath))
                 {
-                    _log.LogError($"Powershell file {file.FullPath} does not have a signature mark.");
+                    _log.LogError($"Powershell file {fileInfo.File.FullPath} does not have a signature mark.");
                 }
             }
             else if (fileInfo.IsZipContainer())
             {
-                var zipData = _batchData.ZipDataMap[file.FileContentKey];
+                var zipData = _batchData.ZipDataMap[fileInfo.FileContentKey];
                 bool signedContainer = false;
 
-                using (var archive = new ZipArchive(File.OpenRead(file.FullPath), ZipArchiveMode.Read))
+                using (var archive = new ZipArchive(File.OpenRead(fileInfo.File.FullPath), ZipArchiveMode.Read))
                 {
                     foreach (ZipArchiveEntry entry in archive.Entries)
                     {
@@ -549,11 +547,11 @@ namespace Microsoft.DotNet.SignTool
                 {
                     if ((fileInfo.IsNupkg() || fileInfo.IsVsix()) && !signedContainer)
                     {
-                        _log.LogError($"Container {file.FullPath} does not have signature marker.");
+                        _log.LogError($"Container {fileInfo.File.FullPath} does not have signature marker.");
                     }
                     else
                     {
-                        _log.LogMessage(MessageImportance.Low, $"Container {file.FullPath} has a signature marker.");
+                        _log.LogMessage(MessageImportance.Low, $"Container {fileInfo.File.FullPath} has a signature marker.");
                     }
                 }
             }

@@ -20,7 +20,7 @@ namespace Microsoft.DotNet.SignTool
         /// <summary>
         /// Signing information.
         /// </summary>
-        internal FileInfo FileInfo { get; }
+        internal FileInfo ZipFileInfo { get; }
 
         /// <summary>
         /// The parts inside this container which may need to be signed.
@@ -29,7 +29,7 @@ namespace Microsoft.DotNet.SignTool
 
         internal ZipData(FileInfo fileInfo, ImmutableDictionary<string, ZipPart> nestedBinaryParts)
         {
-            FileInfo = fileInfo;
+            ZipFileInfo = fileInfo;
             NestedParts = nestedBinaryParts;
         }
 
@@ -49,14 +49,14 @@ namespace Microsoft.DotNet.SignTool
         public void Repack(TaskLoggingHelper log, string tempDir = null, string wixToolsPath = null)
         {
 #if NET472
-            if (FileInfo.FileInfo.IsVsix())
+            if (ZipFileInfo.IsVsix())
             {
                 RepackPackage(log);
             }
             else
 #endif
             {
-                if (FileInfo.FileInfo.IsWixContainer())
+                if (ZipFileInfo.IsWixContainer())
                 {
                     RepackWixPack(log, tempDir, wixToolsPath);
                 }
@@ -84,7 +84,7 @@ namespace Microsoft.DotNet.SignTool
                 return path;
             }
             
-            using (var package = Package.Open(FileInfo.File.FullPath, FileMode.Open, FileAccess.ReadWrite))
+            using (var package = Package.Open(ZipFileInfo.File.FullPath, FileMode.Open, FileAccess.ReadWrite))
             {
                 foreach (var part in package.GetParts())
                 {
@@ -92,14 +92,14 @@ namespace Microsoft.DotNet.SignTool
                     var signedPart = FindNestedPart(relativeName);
                     if (!signedPart.HasValue)
                     {
-                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {FileInfo.File.FullPath} -> {relativeName}");
+                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {ZipFileInfo.File.FullPath} -> {relativeName}");
                         continue;
                     }
 
                     using (var signedStream = File.OpenRead(signedPart.Value.FileInfo.File.FullPath))
                     using (var partStream = part.GetStream(FileMode.Open, FileAccess.ReadWrite))
                     {
-                        log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.File.FullPath} to {FileInfo.File.FullPath} -> {relativeName}.");
+                        log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.File.FullPath} to {ZipFileInfo.File.FullPath} -> {relativeName}.");
 
                         signedStream.CopyTo(partStream);
                         partStream.SetLength(signedStream.Length);
@@ -113,7 +113,7 @@ namespace Microsoft.DotNet.SignTool
         /// </summary>
         private void RepackRawZip(TaskLoggingHelper log)
         {
-            using (var archive = new ZipArchive(File.Open(FileInfo.FullPath, FileMode.Open), ZipArchiveMode.Update))
+            using (var archive = new ZipArchive(File.Open(ZipFileInfo.File.FullPath, FileMode.Open), ZipArchiveMode.Update))
             {
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
@@ -121,14 +121,14 @@ namespace Microsoft.DotNet.SignTool
                     var signedPart = FindNestedPart(relativeName);
                     if (!signedPart.HasValue)
                     {
-                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {FileInfo.FullPath} -> {relativeName}");
+                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {ZipFileInfo.File.FullPath} -> {relativeName}");
                         continue;
                     }
 
-                    using (var signedStream = File.OpenRead(signedPart.Value.FileInfo.FullPath))
+                    using (var signedStream = File.OpenRead(signedPart.Value.FileInfo.File.FullPath))
                     using (var entryStream = entry.Open())
                     {
-                        log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.FullPath} to {FileInfo.FullPath} -> {relativeName}.");
+                        log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.File.FullPath} to {ZipFileInfo.File.FullPath} -> {relativeName}.");
 
                         signedStream.CopyTo(entryStream);
                         entryStream.SetLength(signedStream.Length);
@@ -150,12 +150,12 @@ namespace Microsoft.DotNet.SignTool
             string workingDir = Path.Combine(tempDir, "extract", workingDirGuidSegment);
             string outputDir = Path.Combine(tempDir, "output", outputDirGuidSegment);
             string createFileName = Path.Combine(workingDir, "create.cmd");
-            string outputFileName = Path.Combine(outputDir, FileInfo.FileName);
+            string outputFileName = Path.Combine(outputDir, ZipFileInfo.File.FileName);
 
             try
             {
                 Directory.CreateDirectory(outputDir);
-                ZipFile.ExtractToDirectory(FileInfo.FileInfo.WixContentFilePath, workingDir);
+                ZipFile.ExtractToDirectory(ZipFileInfo.WixContentFilePath, workingDir);
 
                 var fileList = Directory.GetFiles(workingDir, "*", SearchOption.AllDirectories);
                 foreach (var file in fileList)
@@ -164,16 +164,16 @@ namespace Microsoft.DotNet.SignTool
                     var signedPart = FindNestedPart(relativeName);
                     if (!signedPart.HasValue)
                     {
-                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {FileInfo.FullPath} -> {relativeName}");
+                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {ZipFileInfo.File.FullPath} -> {relativeName}");
                         continue;
                     }
-                    log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.FullPath} to {file}.");
+                    log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.File.FullPath} to {file}.");
                     File.Copy(signedPart.Value.FileInfo.File.FullPath, file, true);
                 }
 
                 if (!BatchSignUtil.RunWixTool(createFileName, outputDir, workingDir, wixToolsPath, log))
                 {
-                    log.LogError($"Packaging of wix file '{FileInfo.File.FullPath}' failed");
+                    log.LogError($"Packaging of wix file '{ZipFileInfo.File.FullPath}' failed");
                     return;
                 }
 
@@ -183,8 +183,8 @@ namespace Microsoft.DotNet.SignTool
                     return;
                 }
 
-                log.LogMessage($"Created wix file {outputFileName}, replacing '{FileInfo.FullPath}' with '{outputFileName}'");
-                File.Copy(outputFileName, FileInfo.File.FullPath, true);
+                log.LogMessage($"Created wix file {outputFileName}, replacing '{ZipFileInfo.File.FullPath}' with '{outputFileName}'");
+                File.Copy(outputFileName, ZipFileInfo.File.FullPath, true);
             }
             finally
             {

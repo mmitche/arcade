@@ -6,15 +6,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
-using System.Diagnostics.Contracts;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Build.Framework;
-using Microsoft.Build.Framework.XamlTypes;
-using static System.Net.WebRequestMethods;
 using ITaskItem = Microsoft.Build.Framework.ITaskItem;
 using TaskLoggingHelper = Microsoft.Build.Utilities.TaskLoggingHelper;
 
@@ -122,6 +119,8 @@ namespace Microsoft.DotNet.SignTool
         Dictionary<string, List<Task>> _topLevelUnpackTasksByCollisionPriorityId = new Dictionary<string, List<Task>>();
 
         public AsyncSignUtil(
+            IBuildEngine buildEngine,
+            SignTool signTool,
             string tempDir,
             ITaskItem[] itemsToSign,
             ImmutableDictionary<string, List<SignInfo>> strongNameInfo,
@@ -155,6 +154,8 @@ namespace Microsoft.DotNet.SignTool
             _wixPacks = _itemsToSign.Where(w => WixPackInfo.IsWixPack(w.ItemSpec))?.Select(s => new WixPackInfo(s.ItemSpec)).ToImmutableList();
             _hashToCollisionIdMap = new ConcurrentDictionary<FileContentKey, string>();
             _telemetry = telemetry;
+            _buildEngine = buildEngine;
+            _signTool = signTool;
         }
 
         public async Task Go()
@@ -240,7 +241,7 @@ namespace Microsoft.DotNet.SignTool
 
             await Task.WhenAll(examinationDependencies);
 
-            var fileWithSignInfo = Examine(file);
+            var fileWithSignInfo = await Examine(file);
 
             if (fileWithSignInfo.ShouldRepack)
             {
@@ -259,7 +260,21 @@ namespace Microsoft.DotNet.SignTool
 
         public async Task Repack(FileWithSignInfo fileWithSignInfo)
         {
-            return Task.CompletedTask;
+            var zipData = await _zipDataMap[fileWithSignInfo.FileInfo.FileContentKey];
+            if (fileWithSignInfo.FileInfo.IsZipContainer())
+            {
+                _log.LogMessage($"Repacking container: '{fileWithSignInfo.FileName}'");
+                zipData.Repack(_log);
+            }
+            else if (fileWithSignInfo.FileInfo.IsWixContainer())
+            {
+                _log.LogMessage($"Packing wix container: '{fileWithSignInfo.FileName}'");
+                zipData.Repack(_log, _signTool.TempDir, _signTool.WixToolsPath);
+            }
+            else
+            {
+                _log.LogError($"Don't know how to repack file '{fileWithSignInfo.FullPath}'");
+            }
         }
 
         /// <summary>
@@ -346,7 +361,7 @@ namespace Microsoft.DotNet.SignTool
 
         public Task<bool> SignBatch(IEnumerable<FileWithSignInfo> files, int batch)
         {
-            _log.LogMessage(MessageImportance.High, $"Batch {batch}: Signing {files.Length} files.");
+            _log.LogMessage(MessageImportance.High, $"Batch {batch}: Signing {files.Count()} files.");
 
             foreach (var file in files)
             {
@@ -442,16 +457,16 @@ namespace Microsoft.DotNet.SignTool
             }
         }
 
-        public FileWithSignInfo Examine(FileInfo fileToExamine)
+        public async Task<FileWithSignInfo> Examine(FileInfo fileToExamine)
         {
             // If the file's signing info has already been computed, no need to do anything.
             // This is largely an optimization. ComputeSigningInfo does not mutate state.
-            if (_filesSignInfoByContentKey.TryGetValue(fileToExamine.FileContentKey, out var fileWIthSignInfo))
+            if (_filesSignInfoByContentKey.TryGetValue(fileToExamine.FileContentKey, out var fileWithSignInfo))
             {
-                return fileWIthSignInfo;
+                return fileWithSignInfo;
             }
 
-            var signingInfo = ComputeSigningInfo(fileToExamine);
+            var signingInfo = await ComputeSigningInfo(fileToExamine);
 
             // Add to map or return value current in the map.
             if (_filesSignInfoByContentKey.TryAdd(fileToExamine.FileContentKey, signingInfo))
@@ -464,7 +479,7 @@ namespace Microsoft.DotNet.SignTool
             }
         }
 
-        private FileWithSignInfo ComputeSigningInfo(FileInfo fileToExamine)
+        private async Task<FileWithSignInfo> ComputeSigningInfo(FileInfo fileToExamine)
         {
             PathWithHash file = fileToExamine.File;
             PathWithHash parentContainer = fileToExamine.ParentContainer;

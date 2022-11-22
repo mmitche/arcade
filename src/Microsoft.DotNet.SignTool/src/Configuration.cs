@@ -196,7 +196,7 @@ namespace Microsoft.DotNet.SignTool
                 }
             }
 
-            return new BatchSignInput(_filesToSign.ToImmutableArray(), _zipDataMap.ToImmutableDictionary(), _filesToCopy.ToImmutableArray());
+            return new BatchSignInput(_filesToSign.ToImmutableArray(), _filesByContentKey.ToImmutableDictionary(), _zipDataMap.ToImmutableDictionary(), _filesToCopy.ToImmutableArray());
         }
 
         private FileWithSignInfo TrackFile(FileInfo fileToTrack)
@@ -210,7 +210,7 @@ namespace Microsoft.DotNet.SignTool
 
             var fileSignInfo = ExtractSignInfo(fileToTrack);
 
-            if (_filesByContentKey.TryGetValue(fileSignInfo.FileContentKey, out var existingSignInfo))
+            if (_filesByContentKey.TryGetValue(fileSignInfo.FileInfo.FileContentKey, out var existingSignInfo))
             {
                 // If we saw this file already we wouldn't call TrackFile unless this is a top-level file.
                 Debug.Assert(!isNested);
@@ -226,7 +226,7 @@ namespace Microsoft.DotNet.SignTool
                 {
                     if (TryBuildZipData(fileSignInfo, out var zipData))
                     {
-                        _zipDataMap[fileSignInfo.FileContentKey] = zipData;
+                        _zipDataMap[fileSignInfo.FileInfo.FileContentKey] = zipData;
                     }
                 }
                 else if (fileSignInfo.FileInfo.IsWixContainer())
@@ -234,24 +234,25 @@ namespace Microsoft.DotNet.SignTool
                     _log.LogMessage($"Trying to gather data for wix container {fileSignInfo.FullPath}");
                     if (TryBuildWixData(fileSignInfo, out var msiData))
                     {
-                        _zipDataMap[fileSignInfo.FileContentKey] = msiData;
+                        _zipDataMap[fileSignInfo.FileInfo.FileContentKey] = msiData;
                     }
                 }
             }
-            _log.LogMessage(MessageImportance.Low, $"Caching file {fileSignInfo.FileContentKey.FileName} {fileSignInfo.FileContentKey.StringHash}");
-            _filesByContentKey.Add(fileSignInfo.FileContentKey, fileSignInfo);
+            _log.LogMessage(MessageImportance.Low, $"Caching file {fileSignInfo.FileInfo.FileContentKey.FileName} {fileSignInfo.FileInfo.FileContentKey.StringHash}");
+            _filesByContentKey.Add(fileSignInfo.FileInfo.FileContentKey, fileSignInfo);
 
             bool hasSignableParts = false;
             if (fileSignInfo.FileInfo.IsContainer())
             {
                 // Only sign containers if the file itself is unsigned, or 
                 // an item in the container is unsigned.
-                hasSignableParts = _zipDataMap[fileSignInfo.FileContentKey].NestedParts.Values.Any(b => b.FileInfo.SignInfo.ShouldSign || b.FileInfo.HasSignableParts);
+                hasSignableParts = _zipDataMap[fileSignInfo.FileInfo.FileContentKey].NestedParts.Values.Any(
+                    b => _filesByContentKey[b.FileInfo.FileContentKey].SignInfo.ShouldSign || _filesByContentKey[b.FileInfo.FileContentKey].HasSignableParts);
                 if(hasSignableParts)
                 {
                     // If the file has contents that need to be signed, then re-evaluate the signing info
                     fileSignInfo = fileSignInfo.WithSignableParts();
-                    _filesByContentKey[fileSignInfo.FileContentKey] = fileSignInfo;
+                    _filesByContentKey[fileSignInfo.FileInfo.FileContentKey] = fileSignInfo;
                 }
             }
             if (fileSignInfo.ShouldTrack)
@@ -734,12 +735,12 @@ namespace Microsoft.DotNet.SignTool
 
                             if (fileSignInfo.ShouldTrack)
                             {
-                                nestedParts.Add(relativePath, new ZipPart(relativePath, fileSignInfo));
+                                nestedParts.Add(relativePath, new ZipPart(relativePath, fileSignInfo.FileInfo));
                             }
                         }
                     }
 
-                    zipData = new ZipData(zipFileSignInfo, nestedParts.ToImmutableDictionary());
+                    zipData = new ZipData(zipFileSignInfo.FileInfo, nestedParts.ToImmutableDictionary());
 
                     return true;
                 }
