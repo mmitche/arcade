@@ -1,14 +1,17 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using Microsoft.Build.Framework;
-using Microsoft.Build.Utilities;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.IO.Packaging;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Build.Framework;
+using TaskLoggingHelper = Microsoft.Build.Utilities.TaskLoggingHelper;
 
 namespace Microsoft.DotNet.SignTool
 {
@@ -46,23 +49,23 @@ namespace Microsoft.DotNet.SignTool
         /// <summary>
         /// Repack the zip container with the signed files.
         /// </summary>
-        public void Repack(TaskLoggingHelper log, string tempDir = null, string wixToolsPath = null)
+        public async Task Repack(TaskLoggingHelper log, ConcurrentDictionary<FileContentKey, Task> signingTasksByContentKey, string tempDir = null, string wixToolsPath = null)
         {
 #if NET472
             if (ZipFileInfo.IsVsix())
             {
-                RepackPackage(log);
+                await RepackPackageAsync(log, signingTasksByContentKey);
             }
             else
 #endif
             {
                 if (ZipFileInfo.IsWixContainer())
                 {
-                    RepackWixPack(log, tempDir, wixToolsPath);
+                    await RepackWixPack(log, signingTasksByContentKey, tempDir, wixToolsPath);
                 }
                 else 
                 {
-                    RepackRawZip(log);
+                    await RepackRawZip(log, signingTasksByContentKey);
                 }
             }
         }
@@ -71,7 +74,7 @@ namespace Microsoft.DotNet.SignTool
         /// <summary>
         /// Repack a zip container with a package structure.
         /// </summary>
-        private void RepackPackage(TaskLoggingHelper log)
+        private async Task RepackPackageAsync(TaskLoggingHelper log, ConcurrentDictionary<FileContentKey, Task> entryReadyMap)
         {
             string getPartRelativeFileName(PackagePart part)
             {
@@ -86,44 +89,77 @@ namespace Microsoft.DotNet.SignTool
             
             using (var package = Package.Open(ZipFileInfo.File.FullPath, FileMode.Open, FileAccess.ReadWrite))
             {
+                // Before doing this, we need to ensure that all the files we are about to repack
+                // are signed.
+                List<PackagePart> partsToRepack = new List<PackagePart>();
+                List<Task> signingTasksToWaitOn = new List<Task>();
                 foreach (var part in package.GetParts())
                 {
                     var relativeName = getPartRelativeFileName(part);
-                    var signedPart = FindNestedPart(relativeName);
-                    if (!signedPart.HasValue)
+                    var zipPart = FindNestedPart(relativeName);
+                    if (!zipPart.HasValue)
                     {
-                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {ZipFileInfo.File.FullPath} -> {relativeName}");
                         continue;
                     }
+                    partsToRepack.Add(part);
+                    if (entryReadyMap.TryGetValue(zipPart.Value.FileInfo.FileContentKey, out var task))
+                    {
+                        signingTasksToWaitOn.Add(task);
+                    }
+                }
+
+                await Task.WhenAll(signingTasksToWaitOn);
+
+                foreach (var part in partsToRepack)
+                {
+                    var relativeName = getPartRelativeFileName(part);
+                    var signedPart = FindNestedPart(relativeName);
 
                     using (var signedStream = File.OpenRead(signedPart.Value.FileInfo.File.FullPath))
                     using (var partStream = part.GetStream(FileMode.Open, FileAccess.ReadWrite))
                     {
                         log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.File.FullPath} to {ZipFileInfo.File.FullPath} -> {relativeName}.");
 
-                        signedStream.CopyTo(partStream);
+                        await signedStream.CopyToAsync(partStream);
                         partStream.SetLength(signedStream.Length);
                     }
                 }
             }
         }
 #endif
+
         /// <summary>
         /// Repack raw zip container.
         /// </summary>
-        private void RepackRawZip(TaskLoggingHelper log)
+        private async Task RepackRawZip(TaskLoggingHelper log, ConcurrentDictionary<FileContentKey, Task> entryReadyMap)
         {
             using (var archive = new ZipArchive(File.Open(ZipFileInfo.File.FullPath, FileMode.Open), ZipArchiveMode.Update))
             {
+                // Before doing this, we need to ensure that all the files we are about to repack
+                // are signed.
+                List<ZipArchiveEntry> entriesToRepack = new List<ZipArchiveEntry>();
+                List<Task> entryReadyTasks = new List<Task>();
+                foreach (var entry in archive.Entries)
+                {
+                    var relativeName = entry.FullName;
+                    var zipPart = FindNestedPart(relativeName);
+                    if (!zipPart.HasValue)
+                    {
+                        continue;
+                    }
+                    entriesToRepack.Add(entry);
+                    if (entryReadyMap.TryGetValue(zipPart.Value.FileInfo.FileContentKey, out var task))
+                    {
+                        entryReadyTasks.Add(task);
+                    }
+                }
+
+                await Task.WhenAll(entryReadyTasks);
+
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
                     string relativeName = entry.FullName;
                     var signedPart = FindNestedPart(relativeName);
-                    if (!signedPart.HasValue)
-                    {
-                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {ZipFileInfo.File.FullPath} -> {relativeName}");
-                        continue;
-                    }
 
                     using (var signedStream = File.OpenRead(signedPart.Value.FileInfo.File.FullPath))
                     using (var entryStream = entry.Open())
@@ -136,7 +172,7 @@ namespace Microsoft.DotNet.SignTool
                 }
             }
         }
-        private void RepackWixPack(TaskLoggingHelper log, string tempDir, string wixToolsPath)
+        private async Task RepackWixPack(TaskLoggingHelper log, ConcurrentDictionary<FileContentKey, Task> signingTasksByContentKey, string tempDir, string wixToolsPath)
         {
             // The wixpacks can have rather long paths when fully extracted.
             // To avoid issues, use the first element of the GUID (up to first -).
@@ -158,15 +194,33 @@ namespace Microsoft.DotNet.SignTool
                 ZipFile.ExtractToDirectory(ZipFileInfo.WixContentFilePath, workingDir);
 
                 var fileList = Directory.GetFiles(workingDir, "*", SearchOption.AllDirectories);
+
+                // Before doing this, we need to ensure that all the files we are about to repack
+                // are signed.
+                List<string> filesToRepack = new List<string>();
+                List<Task> signingTasksToWaitOn = new List<Task>();
                 foreach (var file in fileList)
                 {
-                    var relativeName = file.Substring($"{workingDir}\\".Length).Replace('\\', '/');
-                    var signedPart = FindNestedPart(relativeName);
-                    if (!signedPart.HasValue)
+                    var relativeName = GetRelativeName(workingDir, file);
+                    var zipPart = FindNestedPart(relativeName);
+                    if (!zipPart.HasValue)
                     {
-                        log.LogMessage(MessageImportance.Low, $"Didn't find signed part for nested file: {ZipFileInfo.File.FullPath} -> {relativeName}");
                         continue;
                     }
+                    filesToRepack.Add(file);
+                    if (signingTasksByContentKey.TryGetValue(zipPart.Value.FileInfo.FileContentKey, out var task))
+                    {
+                        signingTasksToWaitOn.Add(task);
+                    }
+                }
+
+                await Task.WhenAll(signingTasksToWaitOn);
+
+                foreach (var file in fileList)
+                {
+                    var relativeName = GetRelativeName(workingDir, file);
+                    var signedPart = FindNestedPart(relativeName);
+
                     log.LogMessage(MessageImportance.Low, $"Copying signed stream from {signedPart.Value.FileInfo.File.FullPath} to {file}.");
                     File.Copy(signedPart.Value.FileInfo.File.FullPath, file, true);
                 }
@@ -192,6 +246,8 @@ namespace Microsoft.DotNet.SignTool
                 Directory.Delete(workingDir, true);
                 Directory.Delete(outputDir, true);
             }
+
+            static string GetRelativeName(string workingDir, string file) => file.Substring($"{workingDir}\\".Length).Replace('\\', '/');
         }
     }
 }

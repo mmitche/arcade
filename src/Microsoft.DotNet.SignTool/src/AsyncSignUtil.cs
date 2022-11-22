@@ -193,7 +193,7 @@ namespace Microsoft.DotNet.SignTool
         /// <returns></returns>
         public async Task ProcessFile(FileInfo file, ConcurrentBag<Task> tasks, int depth)
         {
-            // A file may not be unpacked or examined if it has a higher than other tasks that are
+            // A file may not be unpacked or examined if it has a higher CPID than other tasks that are
             // in the unpack stage. This means all top level unpack tasks should have been finished.
             if (!string.IsNullOrEmpty(file.CollisionPriorityId))
             {
@@ -242,15 +242,25 @@ namespace Microsoft.DotNet.SignTool
             await Task.WhenAll(examinationDependencies);
 
             var fileWithSignInfo = await Examine(file);
+            Task repackTask = null;
+            Task signTask = null;
 
             if (fileWithSignInfo.ShouldRepack)
             {
-                await Repack(fileWithSignInfo);
+                repackTask = Repack(fileWithSignInfo);
+                tasks.Add(repackTask);
             }
 
             if (fileWithSignInfo.ShouldSign)
             {
-                await Sign(fileWithSignInfo);
+                if (repackTask != null)
+                {
+                    // Repack before signing
+                    await repackTask;
+                }
+
+                signTask = Sign(fileWithSignInfo);
+                tasks.Add(signTask);
             }
         }
 
@@ -261,20 +271,7 @@ namespace Microsoft.DotNet.SignTool
         public async Task Repack(FileWithSignInfo fileWithSignInfo)
         {
             var zipData = await _zipDataMap[fileWithSignInfo.FileInfo.FileContentKey];
-            if (fileWithSignInfo.FileInfo.IsZipContainer())
-            {
-                _log.LogMessage($"Repacking container: '{fileWithSignInfo.FileName}'");
-                zipData.Repack(_log);
-            }
-            else if (fileWithSignInfo.FileInfo.IsWixContainer())
-            {
-                _log.LogMessage($"Packing wix container: '{fileWithSignInfo.FileName}'");
-                zipData.Repack(_log, _signTool.TempDir, _signTool.WixToolsPath);
-            }
-            else
-            {
-                _log.LogError($"Don't know how to repack file '{fileWithSignInfo.FullPath}'");
-            }
+            await zipData.Repack(_log, _signingTasksByContentKey, _signTool.TempDir, _signTool.WixToolsPath);
         }
 
         /// <summary>

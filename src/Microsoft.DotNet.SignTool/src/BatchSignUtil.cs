@@ -227,12 +227,12 @@ namespace Microsoft.DotNet.SignTool
                     if (file.FileInfo.IsZipContainer())
                     {
                         _log.LogMessage($"Repacking container: '{file.FileName}'");
-                        _batchData.ZipDataMap[file.FileInfo.FileContentKey].Repack(_log);
+                        _batchData.ZipDataMap[file.FileInfo.FileContentKey].Repack(_log, null).GetAwaiter().GetResult();
                     }
                     else if (file.FileInfo.IsWixContainer())
                     {
                         _log.LogMessage($"Packing wix container: '{file.FileName}'");
-                        _batchData.ZipDataMap[file.FileInfo.FileContentKey].Repack(_log, _signTool.TempDir, _signTool.WixToolsPath);
+                        _batchData.ZipDataMap[file.FileInfo.FileContentKey].Repack(_log, null, _signTool.TempDir, _signTool.WixToolsPath).GetAwaiter().GetResult();
                     }
                     else
                     {
