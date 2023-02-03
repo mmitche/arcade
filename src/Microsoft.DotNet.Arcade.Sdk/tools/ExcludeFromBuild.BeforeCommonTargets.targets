@@ -29,7 +29,7 @@
   <!--
     If a project specifies ExcludeFromSourceBuild=true during a source build suppress all targets and emulate a no-op
     (empty common targets like Restore, Build, Pack, etc.).
-    
+
     It's also possible to set ExcludeFromBuild prior to importing the Sdk.targets
     to skip building as desired in non-source build scenarios. This might be done to
     avoid building tests in certain product build scenarios.
@@ -42,7 +42,7 @@
     <!-- If excluding, then disable a restore warning, which will fire on newer SDKs, as well as set the NuGetRestoreTargets property to empty,
          which will avoid importing the restore targets inside the .NET SDK. If the restore targets exist, then static graph restore will attempt tpo
          execute. -->
-    <DisableWarnForInvalidRestoreProjects Condition="'$(_FilteredTargetFrameworks)' == ''">true</DisableWarnForInvalidRestoreProjects>
-    <NuGetRestoreTargets Condition="'$(_FilteredTargetFrameworks)' == ''">$(MSBuildThisFileDirectory)NoRestore.targets</NuGetRestoreTargets>
+    <DisableWarnForInvalidRestoreProjects Condition="'$(_SuppressAllTargets)' == 'true'">true</DisableWarnForInvalidRestoreProjects>
+    <NuGetRestoreTargets Condition="'$(_SuppressAllTargets)' == 'true'">$(MSBuildThisFileDirectory)NoRestore.targets</NuGetRestoreTargets>
   </PropertyGroup>
 </Project>
