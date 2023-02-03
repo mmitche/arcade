@@ -5,6 +5,10 @@
     Some projects do not import Common targets, so BeforeCommonTargets.targets doesn't get imported. 
     (https://github.com/dotnet/arcade/issues/2676).
   -->
+  <PropertyGroup>
+    <_BeforeCommonTargetsHookUsed>true</_BeforeCommonTargetsHookUsed>
+    <_BeforeCommonTargetsHookUsed Condition="'$(_ArcadeBeforeCommonTargetsImported)' != 'true'">false</_BeforeCommonTargetsHookUsed>
+  </PropertyGroup>
   <Import Project="BeforeCommonTargets.targets" Condition="'$(_ArcadeBeforeCommonTargetsImported)' != 'true' and '$(IsCrossTargetingBuild)' != 'true'"/>
   <Import Project="BeforeCommonTargets.CrossTargeting.targets" Condition="'$(_ArcadeBeforeCommonTargetsImported)' != 'true' and '$(IsCrossTargetingBuild)' == 'true'"/>
 
