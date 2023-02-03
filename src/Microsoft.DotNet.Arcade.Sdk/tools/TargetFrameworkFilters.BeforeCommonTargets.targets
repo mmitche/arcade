@@ -15,11 +15,6 @@
     <TargetFramework Condition="'$(TargetFramework)' != ''">$(_FilteredTargetFrameworks)</TargetFramework>
     <!-- If nothing left to build, exclude it! -->
     <ExcludeFromBuild Condition="'$(_FilteredTargetFrameworks)' == ''">true</ExcludeFromBuild>
-    <!-- If excluding, then disable a restore warning, which will fire on newer SDKs, as well as set the NuGetRestoreTargets property to empty,
-         which will avoid importing the restore targets inside the .NET SDK. If the restore targets exist, then static graph restore will attempt tpo
-         execute. -->
-    <DisableWarnForInvalidRestoreProjects Condition="'$(_FilteredTargetFrameworks)' == ''">true</DisableWarnForInvalidRestoreProjects>
-    <NuGetRestoreTargets Condition="'$(_FilteredTargetFrameworks)' == ''">$(MSBuildThisFileDirectory)NoRestore.targets</NuGetRestoreTargets>
   </PropertyGroup>
 
 </Project>
