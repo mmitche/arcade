@@ -7,79 +7,13 @@ relationships of various components used in building software. Physically, an SB
 single file (such as .json) that captures this information about the software from the build. As
 part of the requiements to be compliant with the Executive Order on Cyber Security, each repository
 involved in the composition of .NET needs to produce and upload an SBOM for each job of their
-official build that produces or modifies any assets. In this initial phase, we are focusing our
-efforts to have 6.0 and 7.0 builds generate the SBOMs.
+official build that produces or modifies any assets.
 
-## Use with Arcade
+## Generation with 1ES PT
 
-As an initial phase for SBOM generation, Arcade provides [a new YAML
-template](https://github.com/dotnet/arcade/tree/main/eng/common/templates/steps/generate-sbom.yml)
-to encapsulate the creation and upload of the SBOM to the build's artifacts, leveraging the [ADO
-SBOM generator
-task](https://eng.ms/docs/cloud-ai-platform/devdiv/one-engineering-system-1es/1es-docs/secure-supply-chain/ado-sbom-generator).
-This section describes how to integrate this template into your repo's official build depending on
-your current usage of the YAML templates that Arcade provides.
-
-### Repositories using Arcade's job(s).yml templates
-
-If you are using Arcade from the ".NET Eng - latest" or ".NET 6 Eng" channels, and using the provided job
-templates ([job.yml](https://github.com/dotnet/arcade/tree/main/eng/common/templates/job/job.yml),
-[jobs.yml](https://github.com/dotnet/arcade/blob/main/eng/common/templates/jobs/jobs.yml)), Your
-build legs should start attempting to generate and upload SBOMs automatically.
-
-For most cases, this is all that a repository using the arcade templates will need to do to generate
-and upload their SBOMs. If the generation doesn't work as expected, follow the [troubleshooting
-instructions](#troubleshooting). Once you have verified the SBOMs are being generated for all of your
-jobs, you can [review your SBOMs for correctness](#reviewing-generated-sboms-for-correctness), and set up [retention rules
-for your release builds](#retention-rules-for-release-build-sboms)
-
-### Repositories not using Arcade's job(s).yml templates
-
-We encourage the usage of the job templates, as it's the best way for newer changes to the
-infrastructure to be added to your repository via the Arcade dependency flow. In cases where it's
-not possible for your repository to use the job templates, you will have to insert the
-[generate-sbom.yml](https://github.com/dotnet/arcade/tree/main/eng/common/templates/steps/generate-sbom.yml)
-template directly into each of your jobs that produce or modify assets. 
-
-A minimal example follows:
-
-```yaml
-# One stage, one job: just build and generate an sbom
-stages:
-- stage: build
-  displayName: Build
-  jobs:
-    - job: build (Windows)
-        pool:
-          name: NetCore1ESPool-Internal
-          demands: ImageOverride -equals windows.vs2019.amd64
-
-        steps:
-        - checkout: self
-          clean: true
-
-        - script: eng\common\cibuild.cmd
-            -configuration release
-            -prepareMachine
-          displayName: Windows Build / Publish
-          
-        - template: eng\common\templates\steps\generate-sbom.yml
-```
-
-Much of this template can be used as-is for most repositories, with defaults based on the common
-Arcade configurations. The template allows customization of behavior via the following parameters:
-
-- `PackageVersion`: Version that will be reported by the SBOM. For repositories based on Arcade's
-  main branch, this should be "7.0.0", and "6.0.0" for .NET 6 release branches. 
-- `PackageName`: default is '.NET'. Contact @dotnet/dnceng if you think your repo should use a
-  different name.
-- `ManifestDirPath`: Determines where in the build agent the SBOM will be generated to, defaults to
-  `$(Build.ArtifactStagingDirectory)/sbom`
-- `BuildDropPath` : Determines the directory that the SBOM tooling will use to find build outputs.
-  Defaults to $`(Build.SourcesDirectory)/artifacts` to match Arcade's convention. 
-- `sbomContinueOnError`: By default the tasks are set up to not break the build and instead continue
-  on error if anything goes wrong in the generation process.
-
+At this time, Official 1ES Pipeline templates generate an SBOM automatically upon upload of tasks.
+Explicit use of Arcade's templates or `enableSbom` job parameter are no longer needed. VSIX generation
+will still create an SBOM by default.
 
 ## Reviewing generated SBOMs for correctness
 
@@ -213,8 +147,6 @@ for your release builds:
               -configuration release
               -prepareMachine
             displayName: Windows Build / Publish
-
-          - template: eng\common\templates\steps\generate-sbom.yml
           
           - ${{if eq(parameters.retainBuild, true}}
             - template: eng\common\templates\steps\retain-build.yml
