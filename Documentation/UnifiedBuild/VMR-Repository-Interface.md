@@ -20,7 +20,9 @@ A build of the VMR is invoked via the build.sh or build.cmd script at the root o
 
 When building any component project in the VMR we first need to build its dependencies. These dependencies are identified in the repository project, and the automation simply invokes the builds of those projects before continuing with the current project. Those dependencies may have their own dependencies, and so those get built before continuing, etc. Once a project is reached that has no dependencies (e.g. arcade in non-source-only modes), the repo build is invoked.
 
-The repository build is the simply the invocation of a specified build script with a set of parameters. By default 
+The repository build is the simply the invocation of a specified build script with a set of parameters. By default the build script is the arcade standard `eng/common/build.ps1` with -restore -build -pack -publish and a set of arguments. Examples incldude: debug vs. release, whether tests should be built, or if the build is source-only. In addition to the basic set of arguments, a set of flags that identify the build as being invoked by the "orchestrator" and being in "VMR mode". See [Unified Build Controls](./Unified-Build-Controls.md) for more info. Repository projects also have the option of customizing the input parameters or build script. This is typcial for repositories with more complex automation, like runtime or aspnetcore.
+
+
 
 ## Build Details
 
