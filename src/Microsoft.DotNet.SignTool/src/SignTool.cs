@@ -134,11 +134,11 @@ namespace Microsoft.DotNet.SignTool
 
             Directory.CreateDirectory(dir);
             
-            // var zippedPaths = ZipMacFiles(filesToSign);
+            var zippedPaths = ZipMacFiles(filesToSign);
 
             // First the signing pass
             var signProjectPath = Path.Combine(dir, $"Round{round}-Sign.proj");
-            File.WriteAllText(signProjectPath, GenerateBuildFileContent(filesToSign, null, false));
+            File.WriteAllText(signProjectPath, GenerateBuildFileContent(filesToSign, zippedPaths, false));
             status = RunMSBuild(buildEngine, signProjectPath, Path.Combine(_args.LogDir, $"SigningRound{round}.binlog"));
 
             if (!status)
@@ -147,7 +147,7 @@ namespace Microsoft.DotNet.SignTool
             }
 
             // Now unzip. Notarization does not expect zipped packages.
-            // UnzipMacFiles(zippedPaths);
+            UnzipMacFiles(zippedPaths);
 
             // Then an additional notarization pass.
             var filesToNotarize = filesToSign.Where(f => !string.IsNullOrEmpty(f.SignInfo.Notarization));
