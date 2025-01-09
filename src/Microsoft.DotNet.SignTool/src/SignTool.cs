@@ -146,18 +146,18 @@ namespace Microsoft.DotNet.SignTool
                 return false;
             }
 
+            // Now unzip. Notarization does not expect zipped packages.
+            UnzipMacFiles(zippedPaths);
+
             // Then an additional notarization pass.
             var filesToNotarize = filesToSign.Where(f => !string.IsNullOrEmpty(f.SignInfo.Notarization));
             if (filesToNotarize.Any())
             {
                 // Now notarize. No need to unzip in between
                 var notarizeProjectPath = Path.Combine(dir, $"Round{round}-Notarize.proj");
-                File.WriteAllText(notarizeProjectPath, GenerateBuildFileContent(filesToNotarize, zippedPaths, true));
+                File.WriteAllText(notarizeProjectPath, GenerateBuildFileContent(filesToNotarize, null, true));
                 status = RunMSBuild(buildEngine, notarizeProjectPath, Path.Combine(_args.LogDir, $"NotarizationRound{round}.binlog"));
             }
-
-            // Now unzip
-            UnzipMacFiles(zippedPaths);
 
             return status;
         }
@@ -181,7 +181,7 @@ namespace Microsoft.DotNet.SignTool
 
             foreach (var fileToSign in filesToSign)
             {
-                if (!zippedPaths.TryGetValue(fileToSign.FullPath, out string filePath))
+                if (zippedPaths == null || !zippedPaths.TryGetValue(fileToSign.FullPath, out string filePath))
                 {
                     filePath = fileToSign.FullPath;
                 }
