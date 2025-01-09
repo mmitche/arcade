@@ -127,7 +127,7 @@ namespace Microsoft.DotNet.SignTool
 
         public override bool VerifySignedPkgOrAppBundle(string fullPath, string pkgToolPath)
         {
-            return VerifySignatures.VerifySignedPkgOrAppBundle(fullPath, pkgToolPath);
+            return VerifySignatures.VerifySignedPkgOrAppBundle(_log, fullPath, pkgToolPath);
         }
 
         public override bool LocalStrongNameSign(IBuildEngine buildEngine, int round, IEnumerable<FileSignInfo> files)

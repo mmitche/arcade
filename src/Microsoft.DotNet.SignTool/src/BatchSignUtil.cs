@@ -612,7 +612,7 @@ namespace Microsoft.DotNet.SignTool
                 var zipData = _batchData.ZipDataMap[file.FileContentKey];
                 bool signedContainer = false;
 
-                foreach (var (relativeName, _, _) in ZipData.ReadEntries(file.FullPath, _signTool.TempDir, _signTool.TarToolPath, _signTool.PkgToolPath, ignoreContent: true))
+                foreach (var (relativeName, _, _) in ZipData.ReadEntries(_log, file.FullPath, _signTool.TempDir, _signTool.TarToolPath, _signTool.PkgToolPath, ignoreContent: true))
                 {
                     if (!SkipZipContainerSignatureMarkerCheck)
                     {

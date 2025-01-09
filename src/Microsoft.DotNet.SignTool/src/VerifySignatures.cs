@@ -131,23 +131,23 @@ namespace Microsoft.DotNet.SignTool
             return filePath.StartsWith("package/services/digital-signature/", StringComparison.OrdinalIgnoreCase);
         }
 
-        internal static bool VerifySignedPkgOrAppBundle(string fullPath, string pkgToolPath)
+        internal static bool VerifySignedPkgOrAppBundle(TaskLoggingHelper log, string fullPath, string pkgToolPath)
         {
-            return ZipData.RunPkgProcess(fullPath, null, "verify", pkgToolPath);
+            return ZipData.RunPkgProcess(log, fullPath, null, "verify", pkgToolPath);
         }
 
-        internal static bool IsSignedContainer(string fullPath, string tempDir, string tarToolPath, string pkgToolPath)
+        internal static bool IsSignedContainer(TaskLoggingHelper log, string fullPath, string tempDir, string tarToolPath, string pkgToolPath)
         {
             if (FileSignInfo.IsZipContainer(fullPath))
             {
-                if ((FileSignInfo.IsPkg(fullPath) || FileSignInfo.IsAppBundle(fullPath)) && VerifySignedPkgOrAppBundle(fullPath, pkgToolPath))
+                if ((FileSignInfo.IsPkg(fullPath) || FileSignInfo.IsAppBundle(fullPath)) && VerifySignedPkgOrAppBundle(log, fullPath, pkgToolPath))
                 {
                     return true;
                 }
 
                 bool signedContainer = false;
 
-                foreach (var (relativePath, _, _) in ZipData.ReadEntries(fullPath, tempDir, tarToolPath, pkgToolPath, ignoreContent: false))
+                foreach (var (relativePath, _, _) in ZipData.ReadEntries(log, fullPath, tempDir, tarToolPath, pkgToolPath, ignoreContent: false))
                 {
                     if (FileSignInfo.IsNupkg(fullPath) && VerifySignedNupkgByFileMarker(relativePath))
                     {

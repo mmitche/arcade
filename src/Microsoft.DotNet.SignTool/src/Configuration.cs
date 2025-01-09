@@ -442,7 +442,7 @@ namespace Microsoft.DotNet.SignTool
             }
             else if (FileSignInfo.IsPackage(file.FullPath))
             {
-                isAlreadyAuthenticodeSigned = VerifySignatures.IsSignedContainer(file.FullPath, _pathToContainerUnpackingDirectory, _tarToolPath, _pkgToolPath);
+                isAlreadyAuthenticodeSigned = VerifySignatures.IsSignedContainer(_log, file.FullPath, _pathToContainerUnpackingDirectory, _tarToolPath, _pkgToolPath);
                 if(!isAlreadyAuthenticodeSigned)
                 {
                     _log.LogMessage(MessageImportance.Low, $"Container {file.FullPath} does not have a signature marker.");
@@ -753,7 +753,7 @@ namespace Microsoft.DotNet.SignTool
             {
                 var nestedParts = new Dictionary<string, ZipPart>();
                 
-                foreach (var (relativePath, contentStream, contentSize) in ZipData.ReadEntries(archivePath, _pathToContainerUnpackingDirectory, _tarToolPath, _pkgToolPath))
+                foreach (var (relativePath, contentStream, contentSize) in ZipData.ReadEntries(_log, archivePath, _pathToContainerUnpackingDirectory, _tarToolPath, _pkgToolPath))
                 {
                     if (contentStream == null)
                     {
