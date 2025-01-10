@@ -330,12 +330,12 @@ namespace Microsoft.DotNet.SignTool
                     var dualSigningAllowed = certificateSignInfo.GetMetadata("DualSigningAllowed");
                     bool dualSignAllowedValue = false;
                     var macSigningOperation = certificateSignInfo.GetMetadata("MacCertificate");
-                    var macNotarizationOperation = certificateSignInfo.GetMetadata("MacNotarizationOperation");
+                    var macNotarizationAppName = certificateSignInfo.GetMetadata("MacNotarizationAppName");
                     var collisionPriorityId = certificateSignInfo.GetMetadata(SignToolConstants.CollisionPriorityId);
 
-                    if (string.IsNullOrEmpty(macSigningOperation) != string.IsNullOrEmpty(macNotarizationOperation))
+                    if (string.IsNullOrEmpty(macSigningOperation) != string.IsNullOrEmpty(macNotarizationAppName))
                     {
-                        Log.LogError($"Both MacCertificate and MacNotarizationOperation must be specified");
+                        Log.LogError($"Both MacCertificate and MacNotarizationAppName must be specified");
                         continue;
                     }
                     if (!string.IsNullOrEmpty(dualSigningAllowed) && !bool.TryParse(dualSigningAllowed, out dualSignAllowedValue))
@@ -348,7 +348,7 @@ namespace Microsoft.DotNet.SignTool
                     {
                         DualSigningAllowed = dualSignAllowedValue,
                         MacSigningOperation = macSigningOperation,
-                        MacNotarizationOperation = macNotarizationOperation,
+                        MacNotarizationAppName = macNotarizationAppName,
                         CollisionPriorityId = collisionPriorityId
                     };
 

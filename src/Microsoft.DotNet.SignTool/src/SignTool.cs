@@ -63,7 +63,7 @@ namespace Microsoft.DotNet.SignTool
         {
             var zipPaths = new Dictionary<string, string>();
             var osxFilesToZip = filesToSign.Where(fsi => SignToolConstants.MacSigningOperationsRequiringZipping.Contains(fsi.SignInfo.Certificate) ||
-                                                          SignToolConstants.MacSigningOperationsRequiringZipping.Contains(fsi.SignInfo.Notarization));
+                                                          SignToolConstants.MacSigningOperationsRequiringZipping.Contains(fsi.SignInfo.NotarizationAppName));
 
             foreach (var file in osxFilesToZip)
             {
@@ -150,7 +150,7 @@ namespace Microsoft.DotNet.SignTool
             UnzipMacFiles(zippedPaths);
 
             // Then an additional notarization pass.
-            var filesToNotarize = filesToSign.Where(f => !string.IsNullOrEmpty(f.SignInfo.Notarization));
+            var filesToNotarize = filesToSign.Where(f => !string.IsNullOrEmpty(f.SignInfo.NotarizationAppName));
             if (filesToNotarize.Any())
             {
                 // Now notarize. No need to unzip in between
@@ -186,10 +186,10 @@ namespace Microsoft.DotNet.SignTool
                     filePath = fileToSign.FullPath;
                 }
                 AppendLine(builder, depth: 2, text: $@"<FilesToSign Include=""{Uri.EscapeDataString(filePath)}"">");
-                AppendLine(builder, depth: 3, text: $@"<Authenticode>{(notarize ? fileToSign.SignInfo.Notarization : fileToSign.SignInfo.Certificate)}</Authenticode>");
+                AppendLine(builder, depth: 3, text: $@"<Authenticode>{(notarize ? SignToolConstants.MacNotarizationOperation : fileToSign.SignInfo.Certificate)}</Authenticode>");
                 if (notarize)
                 {
-                    AppendLine(builder, depth: 3, text: $@"<MacAppName>com.microsoft.dotnet</MacAppName>");
+                    AppendLine(builder, depth: 3, text: $@"<MacAppName>{fileToSign.SignInfo.NotarizationAppName}</MacAppName>");
                 }
                 if (fileToSign.SignInfo.ShouldStrongName && !fileToSign.SignInfo.ShouldLocallyStrongNameSign)
                 {

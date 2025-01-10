@@ -1280,7 +1280,7 @@ $@"
             {
                 {  "MacDeveloperHardenWithNotarization",
                     new List<AdditionalCertificateInformation>() {
-                        new AdditionalCertificateInformation() { MacNotarizationOperation = "MacNotarize", MacSigningOperation = "MacDeveloperHarden" }
+                        new AdditionalCertificateInformation() { MacNotarizationAppName = "com.microsoft.dotnet", MacSigningOperation = "MacDeveloperHarden" }
                     } 
                 }
             };
@@ -1330,7 +1330,8 @@ $@"
                 ",
                 $@"
                 <FilesToSign Include=""{Uri.EscapeDataString(Path.Combine(_tmpDir, "test.zip"))}"">
-                <Authenticode>MacNotarize</Authenticode>
+                <Authenticode>8020</Authenticode>
+                <MacAppName>com.microsoft.dotnet</MacAppName>
                 </FilesToSign>",
             }, additionalCertificateInfo: certificatesSignInfo);
         }
@@ -2333,7 +2334,7 @@ $@"
                 new TaskItem("MacDeveloperHardenWithNotarization", new Dictionary<string, string>
                 {
                     { "MacCertificate", "MacDeveloperHarden" },
-                    { "MacNotarizationOperation", "MacNotarize" },
+                    { "MacNotarizationAppName", "com.microsoft.dotnet" },
                     { "CollisionPriorityId", "123" }
                 })
             };

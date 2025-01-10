@@ -514,7 +514,7 @@ namespace Microsoft.DotNet.SignTool
             {
                 bool dualCertsAllowed = false;
                 string macSignOperation = null;
-                string macNotarizeOperation = null;
+                string macNotarizationAppName = null;
                 if (signInfo.Certificate != null && _additionalCertificateInformation.TryGetValue(signInfo.Certificate, out var additionalInfo))
                 {
                     var additionalCertInfo = additionalInfo.FirstOrDefault(a => string.IsNullOrEmpty(a.CollisionPriorityId) || 
@@ -523,13 +523,13 @@ namespace Microsoft.DotNet.SignTool
                     {
                         dualCertsAllowed = additionalCertInfo.DualSigningAllowed;
                         macSignOperation = additionalCertInfo.MacSigningOperation;
-                        macNotarizeOperation = additionalCertInfo.MacNotarizationOperation;
+                        macNotarizationAppName = additionalCertInfo.MacNotarizationAppName;
                     }
                 }
 
                 // If the file is already signed and we are not allowed to dual sign, and we are not doing a mac notarization operation,
                 // then we should not sign the file.
-                if (isAlreadyAuthenticodeSigned && !dualCertsAllowed && string.IsNullOrEmpty(macNotarizeOperation))
+                if (isAlreadyAuthenticodeSigned && !dualCertsAllowed && string.IsNullOrEmpty(macNotarizationAppName))
                 {
                     return new FileSignInfo(file, signInfo.WithIsAlreadySigned(isAlreadyAuthenticodeSigned), wixContentFilePath: wixContentFilePath);
                 }
@@ -539,7 +539,7 @@ namespace Microsoft.DotNet.SignTool
                 if (!string.IsNullOrEmpty(macSignOperation))
                 {
                     signInfo = signInfo.WithCertificateName(macSignOperation, _hashToCollisionIdMap[signedFileContentKey]);
-                    signInfo = signInfo.WithNotarization(macNotarizeOperation, _hashToCollisionIdMap[signedFileContentKey]);
+                    signInfo = signInfo.WithNotarization(macNotarizationAppName, _hashToCollisionIdMap[signedFileContentKey]);
                 }
 
                 if (signInfo.ShouldSign && peInfo != null)
