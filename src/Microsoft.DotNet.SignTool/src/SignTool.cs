@@ -188,9 +188,12 @@ namespace Microsoft.DotNet.SignTool
                 AppendLine(builder, depth: 2, text: $@"<FilesToSign Include=""{Uri.EscapeDataString(filePath)}"">");
                 AppendLine(builder, depth: 3, text: $@"<Authenticode>{(notarize ? fileToSign.SignInfo.Notarization : fileToSign.SignInfo.Certificate)}</Authenticode>");
                 if (notarize)
-                if (fileToSign.SignInfo.ShouldStrongName && !fileToSign.SignInfo.ShouldLocallyStrongNameSign)
                 {
                     AppendLine(builder, depth: 3, text: $@"<MacAppName>com.microsoft.dotnet</MacAppName>");
+                }
+                if (fileToSign.SignInfo.ShouldStrongName && !fileToSign.SignInfo.ShouldLocallyStrongNameSign)
+                {
+                    AppendLine(builder, depth: 3, text: $@"<StrongName>{fileToSign.SignInfo.StrongName}</StrongName>");
                 }
                 AppendLine(builder, depth: 2, text: @"</FilesToSign>");
             }
