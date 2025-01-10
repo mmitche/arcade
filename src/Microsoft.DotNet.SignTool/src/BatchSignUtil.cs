@@ -612,6 +612,13 @@ namespace Microsoft.DotNet.SignTool
                 var zipData = _batchData.ZipDataMap[file.FileContentKey];
                 bool signedContainer = false;
 
+                if ((file.IsPkg() || file.IsAppBundle()) && _signTool.VerifySignedPkgOrAppBundle(file.FullPath, _signTool.PkgToolPath))
+                {
+                    signedContainer = true;
+                }
+
+                // Recurse into the container and verify the contents.
+                // This may include locating and verifying the signature marker for zip files.
                 foreach (var (relativeName, _, _) in ZipData.ReadEntries(_log, file.FullPath, _signTool.TempDir, _signTool.TarToolPath, _signTool.PkgToolPath, ignoreContent: true))
                 {
                     if (!SkipZipContainerSignatureMarkerCheck)
@@ -621,10 +628,6 @@ namespace Microsoft.DotNet.SignTool
                             signedContainer = true;
                         }
                         else if (file.IsVsix() && _signTool.VerifySignedVSIXFileMarker(relativeName))
-                        {
-                            signedContainer = true;
-                        }
-                        else if ((file.IsPkg() || file.IsAppBundle()) && _signTool.VerifySignedPkgOrAppBundle(relativeName, _signTool.PkgToolPath))
                         {
                             signedContainer = true;
                         }
