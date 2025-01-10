@@ -1298,7 +1298,7 @@ $@"
                 "File 'Nested.NativeLibrary.dll' Certificate='Microsoft400'",
                 "File 'Nested.SOS.NETCore.dll' TargetFramework='.NETCoreApp,Version=v1.0' Certificate='Microsoft400'",
                 "File 'NestedPkg.pkg' Certificate='MacDeveloperHarden'",
-                "File 'test.pkg' Certificate='MacDeveloperHarden' Notarize='MacNotarize'",
+                "File 'test.pkg' Certificate='MacDeveloperHarden' NotarizationAppName='com.microsoft.dotnet'",
             }, additionalCertificateInfo: certificatesSignInfo);
 
             // OSX files need to be zipped first before being signed
