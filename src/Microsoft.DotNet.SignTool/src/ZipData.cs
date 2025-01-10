@@ -292,11 +292,14 @@ namespace Microsoft.DotNet.SignTool
                 Arguments = $@"exec ""{pkgToolPath}"" {args}",
                 UseShellExecute = false,
                 RedirectStandardError = true,
+                RedirectStandardOutput = true,
             });
 
             process.ErrorDataReceived += (sender, e) => log.LogError(e.Data);
+            process.OutputDataReceived += (sender, e) => log.LogMessage(e.Data);
 
             process.WaitForExit();
+            log.LogMessage($@"dotnet exec ""{pkgToolPath}"" {args} == {process.ExitCode}");
             return process.ExitCode == 0;
         }
 
