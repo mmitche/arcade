@@ -54,7 +54,7 @@ namespace Microsoft.DotNet.SignTool
             return null;
         }
 
-        public static IEnumerable<(string relativePath, Stream content, long contentSize)> ReadEntries(TaskLoggingHelper log, string archivePath, string tempDir, string tarToolPath, string pkgToolPath, bool ignoreContent = false)
+        public static IEnumerable<(string relativePath, Stream content, long contentSize)> ReadEntries(string archivePath, string tempDir, string tarToolPath, string pkgToolPath, bool ignoreContent = false)
         {
             if (FileSignInfo.IsTarGZip(archivePath))
             {
@@ -68,7 +68,7 @@ namespace Microsoft.DotNet.SignTool
             }
             else if (FileSignInfo.IsPkg(archivePath) || FileSignInfo.IsAppBundle(archivePath))
             {
-                return ReadPkgOrAppBundleEntries(log, archivePath, tempDir, pkgToolPath, ignoreContent);
+                return ReadPkgOrAppBundleEntries(archivePath, tempDir, pkgToolPath, ignoreContent);
             }
             else if (FileSignInfo.IsDeb(archivePath))
             {
@@ -272,7 +272,7 @@ namespace Microsoft.DotNet.SignTool
             }
         }
 
-        internal static bool RunPkgProcess(TaskLoggingHelper log, string srcPath, string dstPath, string action, string pkgToolPath)
+        internal static bool RunPkgProcess(string srcPath, string dstPath, string action, string pkgToolPath)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
@@ -291,24 +291,19 @@ namespace Microsoft.DotNet.SignTool
                 FileName = "dotnet",
                 Arguments = $@"exec ""{pkgToolPath}"" {args}",
                 UseShellExecute = false,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
+                RedirectStandardError = true
             });
 
-            process.ErrorDataReceived += (sender, e) => log.LogError(e.Data);
-            process.OutputDataReceived += (sender, e) => log.LogMessage(e.Data);
-
             process.WaitForExit();
-            log.LogMessage($@"dotnet exec ""{pkgToolPath}"" {args} == {process.ExitCode}");
             return process.ExitCode == 0;
         }
 
-        private static IEnumerable<(string relativePath, Stream content, long contentSize)> ReadPkgOrAppBundleEntries(TaskLoggingHelper log, string archivePath, string tempDir, string pkgToolPath, bool ignoreContent)
+        private static IEnumerable<(string relativePath, Stream content, long contentSize)> ReadPkgOrAppBundleEntries(string archivePath, string tempDir, string pkgToolPath, bool ignoreContent)
         {
             string extractDir = Path.Combine(tempDir, Guid.NewGuid().ToString());
             try
             {
-                if (!RunPkgProcess(log, archivePath, extractDir, "unpack", pkgToolPath))
+                if (!RunPkgProcess(archivePath, extractDir, "unpack", pkgToolPath))
                 {
                     throw new Exception($"Failed to unpack pkg {archivePath}");
                 }
@@ -334,7 +329,7 @@ namespace Microsoft.DotNet.SignTool
             string extractDir = Path.Combine(tempDir, Guid.NewGuid().ToString());
             try
             {
-                if (!RunPkgProcess(log, srcPath: FileSignInfo.FullPath, dstPath: extractDir, "unpack", pkgToolPath))
+                if (!RunPkgProcess(srcPath: FileSignInfo.FullPath, dstPath: extractDir, "unpack", pkgToolPath))
                 {
                     return;
                 }
@@ -354,7 +349,7 @@ namespace Microsoft.DotNet.SignTool
                     File.Copy(signedPart.Value.FileSignInfo.FullPath, path, overwrite: true);
                 }
 
-                if (!RunPkgProcess(log, srcPath: extractDir, dstPath: FileSignInfo.FullPath, "pack", pkgToolPath))
+                if (!RunPkgProcess(srcPath: extractDir, dstPath: FileSignInfo.FullPath, "pack", pkgToolPath))
                 {
                     return;
                 }

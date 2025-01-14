@@ -374,7 +374,7 @@ namespace Microsoft.DotNet.SignTool
             if (FileSignInfo.IsPEFile(file.FullPath))
             {
                 isAlreadyAuthenticodeSigned = ContentUtil.IsAuthenticodeSigned(file.FullPath);
-                isAlreadyStrongNamed = StrongName.IsSigned(file.FullPath, snPath:_snPath, log: _log);
+                isAlreadyStrongNamed = StrongName.IsSigned(file.FullPath, snPath: _snPath, log: _log);
 
 
                 if (!isAlreadyAuthenticodeSigned)
@@ -440,10 +440,22 @@ namespace Microsoft.DotNet.SignTool
                 fileSpec = matchedNameTokenFramework ? $" (PublicKeyToken = {peInfo.PublicKeyToken}, Framework = {peInfo.TargetFramework})" :
                         matchedNameToken ? $" (PublicKeyToken = {peInfo.PublicKeyToken})" : string.Empty;
             }
-            else if (FileSignInfo.IsPackage(file.FullPath))
+            else if (FileSignInfo.IsPkg(file.FullPath) || FileSignInfo.IsAppBundle(file.FullPath))
             {
-                isAlreadyAuthenticodeSigned = VerifySignatures.IsSignedContainer(_log, file.FullPath, _pathToContainerUnpackingDirectory, _tarToolPath, _pkgToolPath);
-                if(!isAlreadyAuthenticodeSigned)
+                isAlreadyAuthenticodeSigned = VerifySignatures.IsSignedPkgOrAppBundle(file.FullPath, _pkgToolPath);
+                if (!isAlreadyAuthenticodeSigned)
+                {
+                    _log.LogMessage(MessageImportance.Low, $"Container {file.FullPath} does not have a signature marker.");
+                }
+                else
+                {
+                    _log.LogMessage(MessageImportance.Low, $"Container {file.FullPath} has a signature marker.");
+                }
+            }
+            else if (FileSignInfo.IsNupkg(file.FullPath))
+            {
+                isAlreadyAuthenticodeSigned = VerifySignatures.IsSignedNupkg(file.FullPath);
+                if (!isAlreadyAuthenticodeSigned)
                 {
                     _log.LogMessage(MessageImportance.Low, $"Container {file.FullPath} does not have a signature marker.");
                 }
@@ -464,9 +476,9 @@ namespace Microsoft.DotNet.SignTool
                     _log.LogMessage(MessageImportance.Low, $"File {file.FullPath} is digitally signed.");
                 }
             }
-            else if(FileSignInfo.IsDeb(file.FullPath))
+            else if (FileSignInfo.IsDeb(file.FullPath))
             {
-                isAlreadyAuthenticodeSigned = VerifySignatures.VerifySignedDeb(_log, file.FullPath);
+                isAlreadyAuthenticodeSigned = VerifySignatures.IsSignedDeb(_log, file.FullPath);
                 if (!isAlreadyAuthenticodeSigned)
                 {
                     _log.LogMessage(MessageImportance.Low, $"File {file.FullPath} is not signed.");
@@ -476,9 +488,9 @@ namespace Microsoft.DotNet.SignTool
                     _log.LogMessage(MessageImportance.Low, $"File {file.FullPath} is signed.");
                 }
             }
-            else if(FileSignInfo.IsPowerShellScript(file.FullPath))
+            else if (FileSignInfo.IsPowerShellScript(file.FullPath))
             {
-                isAlreadyAuthenticodeSigned = VerifySignatures.VerifySignedPowerShellFile(file.FullPath);
+                isAlreadyAuthenticodeSigned = VerifySignatures.IsSignedPowershellFile(file.FullPath);
                 if (!isAlreadyAuthenticodeSigned)
                 {
                     _log.LogMessage(MessageImportance.Low, $"File {file.FullPath} does not have a signature block.");
@@ -753,7 +765,7 @@ namespace Microsoft.DotNet.SignTool
             {
                 var nestedParts = new Dictionary<string, ZipPart>();
                 
-                foreach (var (relativePath, contentStream, contentSize) in ZipData.ReadEntries(_log, archivePath, _pathToContainerUnpackingDirectory, _tarToolPath, _pkgToolPath))
+                foreach (var (relativePath, contentStream, contentSize) in ZipData.ReadEntries(archivePath, _pathToContainerUnpackingDirectory, _tarToolPath, _pkgToolPath))
                 {
                     if (contentStream == null)
                     {

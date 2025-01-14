@@ -50,12 +50,6 @@ namespace Microsoft.DotNet.SignTool
         public bool AllowEmptySignList { get; set; }
 
         /// <summary>
-        /// By default in non-DryRun cases we verify the vsix and nuget packages contain a signature file
-        /// This option disables that check in cases you want to sign the container at a later step. 
-        /// </summary>
-        public bool SkipZipContainerSignatureMarkerCheck { get; set; }
-
-        /// <summary>
         /// For some cases you may need to run the sign tool more than once and if you do you want to
         /// share the same cache directory which contains already signed binaries. In those cases
         /// set this property to true to reuse that file cache.
@@ -290,8 +284,6 @@ namespace Microsoft.DotNet.SignTool
                     repackParallelism: RepackParallelism,
                     maximumParallelFileSizeInBytes: MaximumParallelFileSize * 1024 * 1024,
                     telemetry: telemetry);
-
-                util.SkipZipContainerSignatureMarkerCheck = this.SkipZipContainerSignatureMarkerCheck;
 
                 if (Log.HasLoggedErrors) return;
 

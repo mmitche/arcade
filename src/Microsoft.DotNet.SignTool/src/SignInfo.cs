@@ -75,7 +75,7 @@ namespace Microsoft.DotNet.SignTool
         }
 
         internal SignInfo WithCertificateName(string value, string collisionPriorityId)
-            => new SignInfo(value, StrongName, NotarizationAppName, collisionPriorityId, ShouldIgnore, IsAlreadySigned, IsAlreadyStrongNamed);
+            => new SignInfo(value, StrongName, NotarizationAppName, collisionPriorityId, false, false, IsAlreadyStrongNamed);
 
         internal SignInfo WithNotarization(string appName, string collisionPriorityId)
             => new SignInfo(Certificate, StrongName, appName, collisionPriorityId, ShouldIgnore, IsAlreadySigned, IsAlreadyStrongNamed);

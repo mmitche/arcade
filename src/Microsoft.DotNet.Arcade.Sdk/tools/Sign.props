@@ -23,10 +23,10 @@
     -->
     <CertificatesSignInfo Include="3PartyDual" DualSigningAllowed="true" />
     <CertificatesSignInfo Include="3PartySHA2" DualSigningAllowed="true" />
-    <CertificatesSignInfo Include="MacDeveloperHardenWithNotarization" MacCertificate="MacDeveloperHarden" MacNotarizationAppName="com.microsoft.dotnet" />
-    <CertificatesSignInfo Include="MacDeveloperWithNotarization" MacCertificate="MacDeveloper" MacNotarizationAppName="com.microsoft.dotnet" />
-    <CertificatesSignInfo Include="MacDeveloperVNextWithNotarization" MacCertificate="MacDeveloperVNext" MacNotarizationAppName="com.microsoft.dotnet" />
-    <CertificatesSignInfo Include="MacDeveloperVNextHardenWithNotarization" MacCertificate="MacDeveloperVNextHarden" MacNotarizationAppName="com.microsoft.dotnet" />
+    <CertificatesSignInfo Include="MacDeveloperHardenWithNotarization" MacCertificate="MacDeveloperHarden" MacNotarizationAppName="dotnet" />
+    <CertificatesSignInfo Include="MacDeveloperWithNotarization" MacCertificate="MacDeveloper" MacNotarizationAppName="dotnet" />
+    <CertificatesSignInfo Include="MacDeveloperVNextWithNotarization" MacCertificate="MacDeveloperVNext" MacNotarizationAppName="dotnet" />
+    <CertificatesSignInfo Include="MacDeveloperVNextHardenWithNotarization" MacCertificate="MacDeveloperVNextHarden" MacNotarizationAppName="dotnet" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(EnableDefaultArtifacts)' == 'true'">

@@ -38,8 +38,8 @@ namespace Microsoft.DotNet.SignTool
         public abstract bool VerifySignedDeb(TaskLoggingHelper log, string filePath);
         public abstract bool VerifySignedPEFile(Stream stream);
         public abstract bool VerifySignedPowerShellFile(string filePath);
-        public abstract bool VerifySignedNugetFileMarker(string filePath);
-        public abstract bool VerifySignedVSIXFileMarker(string filePath);
+        public abstract bool VerifySignedNuGet(string filePath);
+        public abstract bool VerifySignedVSIX(string filePath);
         public abstract bool VerifySignedPkgOrAppBundle(string filePath, string pkgToolPath);
 
         public abstract bool VerifyStrongNameSign(string fileFullPath);
