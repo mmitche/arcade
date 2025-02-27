@@ -26,13 +26,13 @@
       <Uri>https://github.com/dotnet/templating</Uri>
       <Sha>fc76b11510b84e3295f4c7961f767a8fe5da98a4</Sha>
     </Dependency>
-    <Dependency Name="Microsoft.DotNet.Arcade.Sdk" Version="10.0.0-beta.25126.5">
+    <Dependency Name="Microsoft.DotNet.Arcade.Sdk" Version="10.0.0-beta.25126.8">
       <Uri>https://github.com/dotnet/arcade</Uri>
-      <Sha>0f0ae5e558557362d39a6999544a90047796e8ee</Sha>
+      <Sha>035efa588b58861715be885c25deeb74765eef7b</Sha>
     </Dependency>
-    <Dependency Name="Microsoft.DotNet.Helix.Sdk" Version="10.0.0-beta.25126.5">
+    <Dependency Name="Microsoft.DotNet.Helix.Sdk" Version="10.0.0-beta.25126.8">
       <Uri>https://github.com/dotnet/arcade</Uri>
-      <Sha>0f0ae5e558557362d39a6999544a90047796e8ee</Sha>
+      <Sha>035efa588b58861715be885c25deeb74765eef7b</Sha>
     </Dependency>
     <Dependency Name="Microsoft.DotNet.ProductConstructionService.Client" Version="1.1.0-beta.25120.4">
       <Uri>https://github.com/dotnet/arcade-services</Uri>
@@ -132,9 +132,9 @@
       <Sha>ef4c24166691977558e5312758df4313ab310dc0</Sha>
     </Dependency>
     <!-- Intermediate is necessary for source build. -->
-    <Dependency Name="Microsoft.SourceBuild.Intermediate.arcade" Version="10.0.0-beta.25126.5">
+    <Dependency Name="Microsoft.SourceBuild.Intermediate.arcade" Version="10.0.0-beta.25126.8">
       <Uri>https://github.com/dotnet/arcade</Uri>
-      <Sha>0f0ae5e558557362d39a6999544a90047796e8ee</Sha>
+      <Sha>035efa588b58861715be885c25deeb74765eef7b</Sha>
       <SourceBuild RepoName="arcade" ManagedOnly="true" />
     </Dependency>
     <!-- Intermediate is necessary for source build. -->
