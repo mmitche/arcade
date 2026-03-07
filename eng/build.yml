@@ -48,6 +48,28 @@ stages:
             /p:Test=false
           displayName: Windows Build / Publish
 
+        - powershell: |
+            # Test recursive signing CLI with ESRP CLI provider (dry-run)
+            $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
+            $signingConfig = "$(System.DefaultWorkingDirectory)\src\Microsoft.DotNet.RecursiveSigning.Cli\signing-config.json"
+            # Use a DLL that isn't already signed - the CLI itself works
+            $testFile = $cliDll
+            Write-Host "Testing recursive signing CLI (ESRP CLI provider, dry-run) with: $testFile"
+            & .dotnet\dotnet.exe $cliDll --config $signingConfig --input $testFile --esrp --dry-run --verbose
+            if ($LASTEXITCODE -ne 0) { throw "Recursive signing dry-run (ESRP CLI) failed with exit code $LASTEXITCODE" }
+          displayName: 'Test: Recursive Signing CLI (ESRP CLI dry-run)'
+
+        - powershell: |
+            # Test recursive signing CLI with ESRPClient.exe provider (dry-run)
+            $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
+            $signingConfig = "$(System.DefaultWorkingDirectory)\src\Microsoft.DotNet.RecursiveSigning.Cli\signing-config.json"
+            # Use a different DLL for the second test to show both providers work
+            $testFile = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.dll"
+            Write-Host "Testing recursive signing CLI (ESRPClient.exe provider, dry-run) with: $testFile"
+            & .dotnet\dotnet.exe $cliDll --config $signingConfig --input $testFile --esrp-client --dry-run --verbose
+            if ($LASTEXITCODE -ne 0) { throw "Recursive signing dry-run (ESRPClient.exe) failed with exit code $LASTEXITCODE" }
+          displayName: 'Test: Recursive Signing CLI (ESRPClient.exe dry-run)'
+
 - stage: ValidateSdk
   displayName: Validate Arcade SDK
   dependsOn: build
