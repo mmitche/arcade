@@ -7,8 +7,6 @@ parameters:
   configPath: ''
   # Input files / glob patterns (semicolon-separated)
   inputs: ''
-  # Output directory (optional, defaults to in-place signing)
-  outputDirectory: ''
   # ESRP client account identifier (passed as --esrp-client-id)
   esrpId: '28ec6507-2167-4eaa-a294-34408cf5dd0e'
   # App registration client ID for ESRP auth (passed as --esrp-app-registration)
@@ -39,21 +37,24 @@ steps:
         $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
         $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
 
+        # Copy input files to a staging directory so ESRP can overwrite them
+        # (original files may be locked by the running dotnet process).
+        $stageDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-cli"
+        New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+
         $inputArgs = @()
         $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
         foreach ($input in $inputs) {
+          $src = $input.Trim()
+          $dest = Join-Path $stageDir (Split-Path $src -Leaf)
+          Copy-Item -Path $src -Destination $dest -Force
+          Write-Host "Staged: $src -> $dest"
           $inputArgs += "--input"
-          $inputArgs += $input.Trim()
+          $inputArgs += $dest
         }
 
         $dryRunFlag = @()
         if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
-
-        $outputArgs = @()
-        if ("${{ parameters.outputDirectory }}" -ne "") {
-          $outputArgs += "--output"
-          $outputArgs += "${{ parameters.outputDirectory }}"
-        }
 
         $providerArgs = @(
           "--esrp",
@@ -72,7 +73,7 @@ steps:
 
         & $dotnet $cliDll `
           --config "${{ parameters.configPath }}" --verbose `
-          @providerArgs @dryRunFlag @inputArgs @outputArgs
+          @providerArgs @dryRunFlag @inputArgs
 
         if ($LASTEXITCODE -ne 0) {
           Write-Error "Recursive signing CLI (ESRP CLI) failed with exit code $LASTEXITCODE"
@@ -98,21 +99,23 @@ steps:
       }
       Write-Host "Found EsrpClient.exe at: $($esrpClientExe.FullName)"
 
+      # Copy input files to a staging directory so ESRP can overwrite them
+      $stageDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-client"
+      New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+
       $inputArgs = @()
       $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
       foreach ($input in $inputs) {
+        $src = $input.Trim()
+        $dest = Join-Path $stageDir (Split-Path $src -Leaf)
+        Copy-Item -Path $src -Destination $dest -Force
+        Write-Host "Staged: $src -> $dest"
         $inputArgs += "--input"
-        $inputArgs += $input.Trim()
+        $inputArgs += $dest
       }
 
       $dryRunFlag = @()
       if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
-
-      $outputArgs = @()
-      if ("${{ parameters.outputDirectory }}" -ne "") {
-        $outputArgs += "--output"
-        $outputArgs += "${{ parameters.outputDirectory }}"
-      }
 
       # ESRPClient.exe uses cert-based auth from certs installed by MicroBuild.
       # Auth config is passed via ESRP_AUTH_CONFIG env var so the provider picks it up.
@@ -127,7 +130,7 @@ steps:
 
       & $dotnet $cliDll `
         --config "${{ parameters.configPath }}" --verbose `
-        @providerArgs @dryRunFlag @inputArgs @outputArgs
+        @providerArgs @dryRunFlag @inputArgs
 
       if ($LASTEXITCODE -ne 0) {
         Write-Error "Recursive signing CLI (ESRPClient.exe) failed with exit code $LASTEXITCODE"
