@@ -1,0 +1,141 @@
+parameters:
+  # Azure DevOps service connection name for ESRP signing (ESRP CLI only)
+  serviceConnectionName: 'DotNetBuildESRP'
+  # Service connection GUID for federated token auth (ESRP CLI only)
+  serviceConnectionGuid: '4171f9a7-af33-4d84-8daf-2d0185625062'
+  # Signing config file path
+  configPath: ''
+  # Input files / glob patterns (semicolon-separated)
+  inputs: ''
+  # Output directory (optional, defaults to in-place signing)
+  outputDirectory: ''
+  # ESRP client account identifier (passed as --esrp-client-id)
+  esrpId: '28ec6507-2167-4eaa-a294-34408cf5dd0e'
+  # App registration client ID for ESRP auth (passed as --esrp-app-registration)
+  esrpClientId: '0ecbcdb7-8451-4cbe-940a-4ed97b08b955'
+  # App registration tenant ID (passed as --esrp-tenant-id)
+  esrpTenantId: '975f013f-7f24-47e8-a7d3-abc4752bf346'
+  # Key vault name for the ESRP auth signing certificate (ESRP CLI only)
+  keyVaultName: 'DotNetEngKeyVault'
+  # Certificate name in the key vault (ESRP CLI only)
+  certName: 'DotNet-ESRP-AuthSignCert'
+  # Signing provider: 'esrp-cli' or 'esrp-client'
+  provider: 'esrp-cli'
+  # Dry-run mode (true/false)
+  dryRun: false
+  # Display name suffix for the pipeline step
+  displayNameSuffix: ''
+
+steps:
+# ── ESRP CLI provider: uses AzureCLI@2 for federated token auth ──
+- ${{ if eq(parameters.provider, 'esrp-cli') }}:
+  - task: AzureCLI@2
+    displayName: 'Recursive Sign${{ parameters.displayNameSuffix }}'
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnectionName }}
+      scriptType: 'ps'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
+        $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
+
+        $inputArgs = @()
+        $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
+        foreach ($input in $inputs) {
+          $inputArgs += "--input"
+          $inputArgs += $input.Trim()
+        }
+
+        $dryRunFlag = @()
+        if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
+
+        $outputArgs = @()
+        if ("${{ parameters.outputDirectory }}" -ne "") {
+          $outputArgs += "--output"
+          $outputArgs += "${{ parameters.outputDirectory }}"
+        }
+
+        $providerArgs = @(
+          "--esrp",
+          "--federated-token",
+          "--service-connection-id", "${{ parameters.serviceConnectionGuid }}",
+          "--esrp-client-id",       "${{ parameters.esrpId }}",
+          "--esrp-app-registration", "${{ parameters.esrpClientId }}",
+          "--esrp-tenant-id",       "${{ parameters.esrpTenantId }}",
+          "--esrp-keyvault-name",   "${{ parameters.keyVaultName }}",
+          "--esrp-cert-name",       "${{ parameters.certName }}"
+        )
+
+        Write-Host "Provider: esrp-cli"
+        Write-Host "Inputs: ${{ parameters.inputs }}"
+        Write-Host "Dry-run: ${{ parameters.dryRun }}"
+
+        & $dotnet $cliDll `
+          --config "${{ parameters.configPath }}" --verbose `
+          @providerArgs @dryRunFlag @inputArgs @outputArgs
+
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Recursive signing CLI (ESRP CLI) failed with exit code $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+# ── ESRPClient.exe provider: uses MicroBuild-installed certs ──
+- ${{ if eq(parameters.provider, 'esrp-client') }}:
+  - powershell: |
+      $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
+      $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
+
+      # ── Discover EsrpClient.exe from MicroBuild output folder ──
+      $microBuildDir = "$(Agent.TempDirectory)\MicroBuild"
+      Write-Host "Searching for EsrpClient.exe under: $microBuildDir"
+
+      $esrpClientExe = Get-ChildItem -Path $microBuildDir -Recurse -Filter "EsrpClient.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+      if (-not $esrpClientExe) {
+        Write-Error "EsrpClient.exe not found under $microBuildDir. Ensure MicroBuild signing plugin is installed with microbuildUseESRP: true."
+        exit 1
+      }
+      Write-Host "Found EsrpClient.exe at: $($esrpClientExe.FullName)"
+
+      $inputArgs = @()
+      $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
+      foreach ($input in $inputs) {
+        $inputArgs += "--input"
+        $inputArgs += $input.Trim()
+      }
+
+      $dryRunFlag = @()
+      if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
+
+      $outputArgs = @()
+      if ("${{ parameters.outputDirectory }}" -ne "") {
+        $outputArgs += "--output"
+        $outputArgs += "${{ parameters.outputDirectory }}"
+      }
+
+      # ESRPClient.exe uses cert-based auth from certs installed by MicroBuild.
+      # Auth config is passed via ESRP_AUTH_CONFIG env var so the provider picks it up.
+      $providerArgs = @(
+        "--esrp-client",
+        "--esrp-client-exe-path", $esrpClientExe.FullName
+      )
+
+      Write-Host "Provider: esrp-client"
+      Write-Host "Inputs: ${{ parameters.inputs }}"
+      Write-Host "Dry-run: ${{ parameters.dryRun }}"
+
+      & $dotnet $cliDll `
+        --config "${{ parameters.configPath }}" --verbose `
+        @providerArgs @dryRunFlag @inputArgs @outputArgs
+
+      if ($LASTEXITCODE -ne 0) {
+        Write-Error "Recursive signing CLI (ESRPClient.exe) failed with exit code $LASTEXITCODE"
+        exit $LASTEXITCODE
+      }
+    displayName: 'Recursive Sign${{ parameters.displayNameSuffix }}'
+    env:
+      # ESRPClient.exe auth: cert-based auth using MicroBuild-installed certs.
+      # The MicroBuild signing plugin installs certs for the DevDiv ESRP account.
+      ESRP_AUTH_CONFIG: >-
+        {"Version":"1.0.0","ClientId":"dec434ad-6bd4-4a20-b400-4bf6db7fc3fb","EsrpClientId":"dec434ad-6bd4-4a20-b400-4bf6db7fc3fb","TenantId":"72f988bf-86f1-41af-91ab-2d7cd011db47","AuthenticationType":"AAD_CERT","RequestSigningCert":{"SubjectName":"dec434ad-6bd4-4a20-b400-4bf6db7fc3fb","StoreLocation":"LocalMachine","StoreName":"My","SendX5c":false},"AuthCert":{"SubjectName":"dec434ad-6bd4-4a20-b400-4bf6db7fc3fb.microsoft.com","StoreLocation":"LocalMachine","StoreName":"My","SendX5c":true}}
