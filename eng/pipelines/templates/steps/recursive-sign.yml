@@ -99,6 +99,83 @@ steps:
       }
       Write-Host "Found EsrpClient.exe at: $($esrpClientExe.FullName)"
 
+      # ── Discover ESRP auth certs installed by MicroBuild ──
+      # MicroBuild installs certs for the ESRP service connection.
+      # Enumerate certs and find the ones with GUID-like subject names (ESRP pattern).
+      Write-Host "`n=== Enumerating certificates in LocalMachine\My ==="
+      $certs = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object {
+        $_.Subject -match '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+      }
+      foreach ($cert in $certs) {
+        Write-Host "  Subject: $($cert.Subject)  Thumbprint: $($cert.Thumbprint)  NotAfter: $($cert.NotAfter)"
+      }
+
+      # Also check CurrentUser store
+      Write-Host "`n=== Enumerating certificates in CurrentUser\My ==="
+      $userCerts = Get-ChildItem -Path Cert:\CurrentUser\My | Where-Object {
+        $_.Subject -match '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+      }
+      foreach ($cert in $userCerts) {
+        Write-Host "  Subject: $($cert.Subject)  Thumbprint: $($cert.Thumbprint)  NotAfter: $($cert.NotAfter)"
+      }
+
+      # Try to find the ESRP request-signing cert and auth cert
+      $allCerts = @($certs) + @($userCerts) | Where-Object { $_ -ne $null }
+      $requestSignCert = $allCerts | Where-Object { $_.Subject -notmatch '\.microsoft\.com' } | Select-Object -First 1
+      $authCert = $allCerts | Where-Object { $_.Subject -match '\.microsoft\.com' } | Select-Object -First 1
+
+      if (-not $requestSignCert -or -not $authCert) {
+        Write-Host "WARNING: Could not find suitable ESRP certs. Available certs:"
+        Get-ChildItem -Path Cert:\LocalMachine\My | ForEach-Object { Write-Host "  $($_.Subject)" }
+        Get-ChildItem -Path Cert:\CurrentUser\My | ForEach-Object { Write-Host "  $($_.Subject)" }
+      }
+
+      # Build ESRP_AUTH_CONFIG dynamically based on discovered certs
+      $esrpAuthConfig = $null
+      if ($requestSignCert -and $authCert) {
+        # Extract the CN from subject
+        $requestCN = ($requestSignCert.Subject -replace 'CN=', '').Trim()
+        $authCN = ($authCert.Subject -replace 'CN=', '').Trim()
+        $requestStore = if ($requestSignCert.PSParentPath -match 'LocalMachine') { 'LocalMachine' } else { 'CurrentUser' }
+        $authStore = if ($authCert.PSParentPath -match 'LocalMachine') { 'LocalMachine' } else { 'CurrentUser' }
+
+        # The EsrpClientId is the GUID portion of the request-signing cert CN
+        $esrpClientId = $requestCN
+        # ClientId (AAD app) - use the auth cert base name (without .microsoft.com)
+        $clientId = $authCN -replace '\.microsoft\.com$', ''
+        # TenantId - use pme tenant for .NET
+        $tenantId = "975f013f-7f24-47e8-a7d3-abc4752bf346"
+
+        Write-Host "`nUsing request-signing cert CN: $requestCN (Store: $requestStore)"
+        Write-Host "Using auth cert CN: $authCN (Store: $authStore)"
+        Write-Host "EsrpClientId: $esrpClientId, ClientId: $clientId"
+
+        $authObj = @{
+          Version = "1.0.0"
+          ClientId = $clientId
+          EsrpClientId = $esrpClientId
+          TenantId = $tenantId
+          AuthenticationType = "AAD_CERT"
+          RequestSigningCert = @{
+            SubjectName = $requestCN
+            StoreLocation = $requestStore
+            StoreName = "My"
+            SendX5c = $false
+          }
+          AuthCert = @{
+            SubjectName = $authCN
+            StoreLocation = $authStore
+            StoreName = "My"
+            SendX5c = $true
+          }
+        }
+        $esrpAuthConfig = ($authObj | ConvertTo-Json -Compress -Depth 5)
+        Write-Host "Built ESRP_AUTH_CONFIG from discovered certs"
+      } else {
+        Write-Host "No suitable certs found. Using hardcoded auth config."
+        $esrpAuthConfig = $env:ESRP_AUTH_CONFIG
+      }
+
       # Copy input files to a staging directory so ESRP can overwrite them
       $stageDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-client"
       New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
@@ -117,14 +194,15 @@ steps:
       $dryRunFlag = @()
       if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
 
-      # ESRPClient.exe uses cert-based auth from certs installed by MicroBuild.
-      # Auth config is passed via ESRP_AUTH_CONFIG env var so the provider picks it up.
+      # Set the auth config for ESRPClient.exe
+      $env:ESRP_AUTH_CONFIG = $esrpAuthConfig
+
       $providerArgs = @(
         "--esrp-client",
         "--esrp-client-exe-path", $esrpClientExe.FullName
       )
 
-      Write-Host "Provider: esrp-client"
+      Write-Host "`nProvider: esrp-client"
       Write-Host "Inputs: ${{ parameters.inputs }}"
       Write-Host "Dry-run: ${{ parameters.dryRun }}"
 
@@ -137,8 +215,3 @@ steps:
         exit $LASTEXITCODE
       }
     displayName: 'Recursive Sign${{ parameters.displayNameSuffix }}'
-    env:
-      # ESRPClient.exe auth: cert-based auth using MicroBuild-installed certs.
-      # The MicroBuild signing plugin installs certs for the DevDiv ESRP account.
-      ESRP_AUTH_CONFIG: >-
-        {"Version":"1.0.0","ClientId":"dec434ad-6bd4-4a20-b400-4bf6db7fc3fb","EsrpClientId":"dec434ad-6bd4-4a20-b400-4bf6db7fc3fb","TenantId":"72f988bf-86f1-41af-91ab-2d7cd011db47","AuthenticationType":"AAD_CERT","RequestSigningCert":{"SubjectName":"dec434ad-6bd4-4a20-b400-4bf6db7fc3fb","StoreLocation":"LocalMachine","StoreName":"My","SendX5c":false},"AuthCert":{"SubjectName":"dec434ad-6bd4-4a20-b400-4bf6db7fc3fb.microsoft.com","StoreLocation":"LocalMachine","StoreName":"My","SendX5c":true}}
