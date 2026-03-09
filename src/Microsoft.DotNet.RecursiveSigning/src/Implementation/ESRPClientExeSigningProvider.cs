@@ -307,6 +307,16 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 EsrpClientId = _configuration.EsrpClientId ?? _configuration.ClientId ?? "",
                 TenantId = _configuration.TenantId ?? "",
                 AuthenticationType = "AAD_CERT",
+                AuthCert = new
+                {
+                    SubjectName = $"{_configuration.ClientId}.microsoft.com",
+                    StoreLocation = "LocalMachine",
+                    StoreName = "My",
+                    SendX5c = true,
+                    GetCertFromKeyVault = true,
+                    KeyVaultName = _configuration.KeyVaultName,
+                    KeyVaultCertName = _configuration.CertificateName,
+                },
                 RequestSigningCert = new
                 {
                     SubjectName = _configuration.EsrpClientId ?? _configuration.ClientId ?? "",
