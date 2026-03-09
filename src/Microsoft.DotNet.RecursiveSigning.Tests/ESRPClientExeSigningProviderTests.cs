@@ -25,7 +25,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
     {
         private static readonly string RootDir = OperatingSystem.IsWindows() ? @"C:\build" : "/build";
 
-        private static ESRPClientExeSigningConfiguration CreateConfig(bool dryRun = false, ESRPAuthMode authMode = ESRPAuthMode.Certificate) => new()
+        private static ESRPClientExeSigningConfiguration CreateConfig(bool dryRun = false) => new()
         {
             ESRPClientExePath = @"C:\tools\EsrpClient.exe",
             EsrpClientId = "test-esrp-client-id",
@@ -35,7 +35,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             MaxDegreeOfParallelism = 4,
             TempDirectory = OperatingSystem.IsWindows() ? @"C:\temp" : "/tmp",
             DryRun = dryRun,
-            AuthMode = authMode,
         };
 
         private static ESRPCertificateIdentifier CreateCert(string name, string keyCode = "CP-230012")
@@ -140,7 +139,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         [Fact]
         public void BuildAuthJson_WithExplicitParams_ReturnsAuthJson()
         {
-            var config = CreateConfig(authMode: ESRPAuthMode.Certificate);
+            var config = CreateConfig();
             var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
 
             var authJson = provider.BuildAuthJson();
@@ -154,35 +153,19 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         }
 
         [Fact]
-        public void BuildAuthJson_FederatedToken_IncludesFederatedTokenData()
+        public void BuildAuthJson_WithExplicitParams_IncludesAuthCertAndRequestSigningCert()
         {
-            var config = CreateConfig(authMode: ESRPAuthMode.FederatedToken);
-            config.ServiceConnectionId = "sc-guid";
-            config.KeyVaultName = "TestKeyVault";
-            config.CertificateName = "TestCert";
+            var config = CreateConfig();
             var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
 
-            var prevToken = Environment.GetEnvironmentVariable("SYSTEM_ACCESSTOKEN");
-            try
-            {
-                Environment.SetEnvironmentVariable("SYSTEM_ACCESSTOKEN", "fake-token-value");
-                var authJson = provider.BuildAuthJson();
+            var authJson = provider.BuildAuthJson();
 
-                authJson.Should().NotBeNull();
-                var doc = JsonDocument.Parse(authJson!);
-                doc.RootElement.GetProperty("Version").GetString().Should().Be("1.0.0");
-                doc.RootElement.GetProperty("ClientId").GetString().Should().Be("test-client-id");
-                doc.RootElement.GetProperty("AuthCert").GetProperty("GetCertFromKeyVault").GetBoolean().Should().BeTrue();
-                doc.RootElement.GetProperty("AuthCert").GetProperty("KeyVaultName").GetString().Should().Be("TestKeyVault");
-                doc.RootElement.GetProperty("RequestSigningCert").GetProperty("GetCertFromKeyVault").GetBoolean().Should().BeTrue();
-                doc.RootElement.GetProperty("RequestSigningCert").GetProperty("KeyVaultName").GetString().Should().Be("TestKeyVault");
-                doc.RootElement.GetProperty("FederatedTokenData").GetProperty("ServiceConnectionId").GetString().Should().Be("sc-guid");
-                doc.RootElement.GetProperty("FederatedTokenData").GetProperty("SystemAccessToken").GetString().Should().Be("fake-token-value");
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable("SYSTEM_ACCESSTOKEN", prevToken);
-            }
+            authJson.Should().NotBeNull();
+            var doc = JsonDocument.Parse(authJson!);
+            doc.RootElement.GetProperty("AuthCert").GetProperty("SubjectName").GetString().Should().Be("test-client-id.microsoft.com");
+            doc.RootElement.GetProperty("AuthCert").GetProperty("SendX5c").GetBoolean().Should().BeTrue();
+            doc.RootElement.GetProperty("RequestSigningCert").GetProperty("SubjectName").GetString().Should().Be("test-esrp-client-id");
+            doc.RootElement.GetProperty("RequestSigningCert").GetProperty("SendX5c").GetBoolean().Should().BeFalse();
         }
 
         [Fact]
@@ -192,7 +175,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             {
                 ESRPClientExePath = @"C:\tools\EsrpClient.exe",
                 TempDirectory = OperatingSystem.IsWindows() ? @"C:\temp" : "/tmp",
-                AuthMode = ESRPAuthMode.Certificate,
             };
             var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
 

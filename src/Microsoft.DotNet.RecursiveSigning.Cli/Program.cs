@@ -79,10 +79,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                 Description = "Path to esrpcli.dll (default: bundled copy; requires --esrp)"
             };
 
-            var esrpClientExePathOption = new Option<string?>("--esrp-client-exe-path")
-            {
-                Description = "Path to EsrpClient.exe (requires --esrp-client)"
-            };
 
             var rootOption = new Option<string?>("--root")
             {
@@ -141,7 +137,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             rootCommand.Options.Add(esrpClientOption);
             rootCommand.Options.Add(dryRunOption);
             rootCommand.Options.Add(esrpCliPathOption);
-            rootCommand.Options.Add(esrpClientExePathOption);
+
             rootCommand.Options.Add(rootOption);
             rootCommand.Options.Add(esrpClientIdOption);
             rootCommand.Options.Add(esrpAppRegistrationOption);
@@ -163,7 +159,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                 var useESRPClient = result.GetValue(esrpClientOption);
                 var dryRun = result.GetValue(dryRunOption);
                 var esrpCliPath = result.GetValue(esrpCliPathOption);
-                var esrpClientExePath = result.GetValue(esrpClientExePathOption);
                 var rootDirectory = result.GetValue(rootOption);
                 var esrpClientId = result.GetValue(esrpClientIdOption);
                 var esrpAppRegistration = result.GetValue(esrpAppRegistrationOption);
@@ -175,7 +170,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
 
                 return await RunAsync(
                     configPath, inputPatterns, tempDirectory, outputDirectory, verbose, logDir,
-                    useESRP, useESRPClient, dryRun, esrpCliPath, esrpClientExePath, rootDirectory,
+                    useESRP, useESRPClient, dryRun, esrpCliPath, rootDirectory,
                     esrpClientId, esrpAppRegistration, esrpTenantId, esrpKeyVaultName, esrpCertName,
                     useFederatedToken, serviceConnectionId);
             });
@@ -194,7 +189,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             bool useESRPClient,
             bool dryRun,
             string? esrpCliPath,
-            string? esrpClientExePath,
             string? rootDirectory,
             string? esrpClientId,
             string? esrpAppRegistration,
@@ -277,31 +271,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             }
             else if (useESRPClient)
             {
-                if (!dryRun && string.IsNullOrEmpty(esrpClientExePath))
-                {
-                    Console.Error.WriteLine("Error: --esrp-client-exe-path is required when using --esrp-client.");
-                    return 1;
-                }
-
-                if (!dryRun && useFederatedToken)
-                {
-                    var missing = new List<string>();
-                    if (string.IsNullOrEmpty(esrpClientId)) missing.Add("--esrp-client-id");
-                    if (string.IsNullOrEmpty(esrpAppRegistration)) missing.Add("--esrp-app-registration");
-                    if (string.IsNullOrEmpty(esrpTenantId)) missing.Add("--esrp-tenant-id");
-                    if (string.IsNullOrEmpty(esrpKeyVaultName)) missing.Add("--esrp-keyvault-name");
-                    if (string.IsNullOrEmpty(esrpCertName)) missing.Add("--esrp-cert-name");
-                    if (string.IsNullOrEmpty(serviceConnectionId)) missing.Add("--service-connection-id");
-                    if (missing.Count > 0)
-                    {
-                        Console.Error.WriteLine($"Error: The following required ESRP options are missing for --esrp-client with --federated-token: {string.Join(", ", missing)}");
-                        return 1;
-                    }
-                }
-
                 var esrpClientConfig = new ESRPClientExeSigningConfiguration
                 {
-                    ESRPClientExePath = esrpClientExePath ?? "",
+                    ESRPClientExePath = GetBundledEsrpClientExePath(),
                     TempDirectory = tempDirectory,
                     LogDirectory = logDir ?? Path.Combine(tempDirectory, "esrpclient-logs"),
                     DryRun = dryRun,
@@ -309,10 +281,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                     EsrpClientId = esrpClientId,
                     ClientId = esrpAppRegistration,
                     TenantId = esrpTenantId,
-                    AuthMode = useFederatedToken ? ESRPAuthMode.FederatedToken : ESRPAuthMode.Certificate,
-                    ServiceConnectionId = serviceConnectionId ?? "",
-                    KeyVaultName = esrpKeyVaultName ?? "",
-                    CertificateName = esrpCertName ?? "",
                 };
                 services.AddSingleton(esrpClientConfig);
                 services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
@@ -495,6 +463,15 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
         {
             var appDir = AppContext.BaseDirectory;
             return Path.Combine(appDir, "ESRPCLI", "esrpcli.dll");
+        }
+
+        /// <summary>
+        /// Returns the path to the bundled EsrpClient.exe that ships alongside this CLI tool.
+        /// </summary>
+        private static string GetBundledEsrpClientExePath()
+        {
+            var appDir = AppContext.BaseDirectory;
+            return Path.Combine(appDir, "ESRPClient", "EsrpClient.exe");
         }
     }
 }

@@ -82,28 +82,40 @@ steps:
     env:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
-# ── ESRPClient.exe provider: uses AzureCLI@2 for federated token auth ──
+# ── ESRPClient.exe provider: uses cert-based auth via ESRP_AUTH_CONFIG env var ──
+# MicroBuild installs the ESRP certs to LocalMachine\My store.
+# The auth JSON follows the same pattern as C:\r\Sign\src\sign_v45\ESRPAuthenticator.cs.
 - ${{ if eq(parameters.provider, 'esrp-client') }}:
-  - task: AzureCLI@2
+  - task: PowerShell@2
     displayName: 'Recursive Sign${{ parameters.displayNameSuffix }}'
     inputs:
-      azureSubscription: ${{ parameters.serviceConnectionName }}
-      scriptType: 'ps'
-      scriptLocation: 'inlineScript'
-      inlineScript: |
+      targetType: 'inline'
+      script: |
         $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
         $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
 
-        # ── Discover EsrpClient.exe from MicroBuild output folder ──
-        $microBuildDir = "$(Agent.TempDirectory)\MicroBuild"
-        Write-Host "Searching for EsrpClient.exe under: $microBuildDir"
-
-        $esrpClientExe = Get-ChildItem -Path $microBuildDir -Recurse -Filter "EsrpClient.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $esrpClientExe) {
-          Write-Error "EsrpClient.exe not found under $microBuildDir. Ensure MicroBuild signing plugin is installed with microbuildUseESRP: true."
-          exit 1
-        }
-        Write-Host "Found EsrpClient.exe at: $($esrpClientExe.FullName)"
+        # Build auth JSON for ESRPClient.exe using certs installed by MicroBuild
+        $authJson = @{
+          Version = "1.0.0"
+          ClientId = "${{ parameters.esrpClientId }}"
+          EsrpClientId = "${{ parameters.esrpId }}"
+          TenantId = "${{ parameters.esrpTenantId }}"
+          AuthenticationType = "AAD_CERT"
+          AuthCert = @{
+            SubjectName = "${{ parameters.esrpClientId }}.microsoft.com"
+            StoreLocation = "LocalMachine"
+            StoreName = "My"
+            SendX5c = $true
+          }
+          RequestSigningCert = @{
+            SubjectName = "${{ parameters.esrpId }}"
+            StoreLocation = "LocalMachine"
+            StoreName = "My"
+            SendX5c = $false
+          }
+        } | ConvertTo-Json -Compress
+        $env:ESRP_AUTH_CONFIG = $authJson
+        Write-Host "ESRP_AUTH_CONFIG set (cert-based AAD_CERT auth)"
 
         # Copy input files to a staging directory so ESRP can overwrite them
         $stageDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-client"
@@ -123,20 +135,10 @@ steps:
         $dryRunFlag = @()
         if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
 
-        # Same federated token auth as ESRP CLI
-        $providerArgs = @(
-          "--esrp-client",
-          "--esrp-client-exe-path", $esrpClientExe.FullName,
-          "--federated-token",
-          "--service-connection-id", "${{ parameters.serviceConnectionGuid }}",
-          "--esrp-client-id",       "${{ parameters.esrpId }}",
-          "--esrp-app-registration", "${{ parameters.esrpClientId }}",
-          "--esrp-tenant-id",       "${{ parameters.esrpTenantId }}",
-          "--esrp-keyvault-name",   "${{ parameters.keyVaultName }}",
-          "--esrp-cert-name",       "${{ parameters.certName }}"
-        )
+        # No explicit auth args needed — ESRP_AUTH_CONFIG env var is read by the provider
+        $providerArgs = @("--esrp-client")
 
-        Write-Host "Provider: esrp-client"
+        Write-Host "Provider: esrp-client (bundled, cert auth via ESRP_AUTH_CONFIG)"
         Write-Host "Inputs: ${{ parameters.inputs }}"
         Write-Host "Dry-run: ${{ parameters.dryRun }}"
 
@@ -148,5 +150,3 @@ steps:
           Write-Error "Recursive signing CLI (ESRPClient.exe) failed with exit code $LASTEXITCODE"
           exit $LASTEXITCODE
         }
-    env:
-      SYSTEM_ACCESSTOKEN: $(System.AccessToken)

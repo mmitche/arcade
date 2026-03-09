@@ -217,15 +217,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// <summary>
         /// Builds auth JSON from configuration parameters, or reads from the
         /// <c>ESRP_AUTH_CONFIG</c> environment variable.
-        /// Returns null if auth should be handled by the environment.
+        /// Returns null if auth should be handled by the environment variable directly.
         /// </summary>
         internal string? BuildAuthJson()
         {
-            if (_configuration.AuthMode == ESRPAuthMode.FederatedToken)
-            {
-                return BuildFederatedTokenAuthJson();
-            }
-
             // If explicit auth params are provided, build cert-based auth JSON
             if (!string.IsNullOrEmpty(_configuration.ClientId) &&
                 !string.IsNullOrEmpty(_configuration.TenantId))
@@ -237,6 +232,13 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     EsrpClientId = _configuration.EsrpClientId ?? _configuration.ClientId,
                     TenantId = _configuration.TenantId,
                     AuthenticationType = "AAD_CERT",
+                    AuthCert = new
+                    {
+                        SubjectName = $"{_configuration.ClientId}.microsoft.com",
+                        StoreLocation = "LocalMachine",
+                        StoreName = "My",
+                        SendX5c = true,
+                    },
                     RequestSigningCert = new
                     {
                         SubjectName = _configuration.EsrpClientId ?? _configuration.ClientId,
@@ -259,72 +261,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             if (!_configuration.DryRun)
             {
                 throw new InvalidOperationException(
-                    $"No auth configuration provided. Supply --federated-token with service connection params, " +
-                    $"or --esrp-client-id/--esrp-app-registration/--esrp-tenant-id, " +
+                    $"No auth configuration provided. Supply --esrp-client-id/--esrp-app-registration/--esrp-tenant-id, " +
                     $"or set the {AuthConfigEnvVar} environment variable.");
             }
 
             return null;
-        }
-
-        /// <summary>
-        /// Builds auth JSON with federated token data for ESRPClient.exe.
-        /// ESRPClient.exe contract v1.2.162+ supports FederatedTokenData inline in auth JSON.
-        /// Unlike the ESRP CLI, the access token is NOT encrypted — it's passed as a raw string.
-        /// </summary>
-        private string BuildFederatedTokenAuthJson()
-        {
-            var accessToken = Environment.GetEnvironmentVariable(_configuration.SystemAccessTokenEnvVar);
-            if (string.IsNullOrEmpty(accessToken))
-            {
-                throw new InvalidOperationException(
-                    $"Environment variable '{_configuration.SystemAccessTokenEnvVar}' is not set. " +
-                    "Required for FederatedToken auth mode.");
-            }
-
-            var auth = new
-            {
-                Version = "1.0.0",
-                ClientId = _configuration.ClientId ?? "",
-                EsrpClientId = _configuration.EsrpClientId ?? _configuration.ClientId ?? "",
-                TenantId = _configuration.TenantId ?? "",
-                AuthenticationType = "AAD_CERT",
-                AuthCert = new
-                {
-                    SubjectName = $"{_configuration.ClientId}.microsoft.com",
-                    StoreLocation = "LocalMachine",
-                    StoreName = "My",
-                    SendX5c = true,
-                    GetCertFromKeyVault = true,
-                    KeyVaultName = _configuration.KeyVaultName,
-                    KeyVaultCertName = _configuration.CertificateName,
-                },
-                RequestSigningCert = new
-                {
-                    SubjectName = _configuration.EsrpClientId ?? _configuration.ClientId ?? "",
-                    StoreLocation = "LocalMachine",
-                    StoreName = "My",
-                    SendX5c = false,
-                    GetCertFromKeyVault = true,
-                    KeyVaultName = _configuration.KeyVaultName,
-                    KeyVaultCertName = _configuration.CertificateName,
-                },
-                FederatedTokenData = new
-                {
-                    JobId = GetEnv("SYSTEM_JOBID"),
-                    PlanId = GetEnv("SYSTEM_PLANID"),
-                    ProjectId = GetEnv("SYSTEM_TEAMPROJECTID"),
-                    Hub = GetEnv("SYSTEM_HOSTTYPE"),
-                    Uri = Environment.GetEnvironmentVariable("SYSTEM_COLLECTIONURI")
-                        ?? GetEnv("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI"),
-                    ServiceConnectionId = _configuration.ServiceConnectionId,
-                    SystemAccessToken = accessToken.Trim(),
-                },
-            };
-            return JsonSerializer.Serialize(auth, s_compactJsonOptions);
-
-            static string GetEnv(string name) =>
-                Environment.GetEnvironmentVariable(name) ?? "";
         }
 
         /// <summary>
