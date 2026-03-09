@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -153,10 +154,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         }
 
         [Fact]
-        public void BuildAuthJson_FederatedToken_IncludesFederatedTokenData()
+        public void BuildAuthJson_FederatedToken_IncludesFederatedTokenPath()
         {
+            var tempDir = Path.Combine(Path.GetTempPath(), "esrpclient-test-" + Guid.NewGuid().ToString("N")[..8]);
             var config = CreateConfig(authMode: ESRPAuthMode.FederatedToken);
             config.ServiceConnectionId = "sc-guid";
+            config.TempDirectory = tempDir;
             var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
 
             var prevToken = Environment.GetEnvironmentVariable("SYSTEM_ACCESSTOKEN");
@@ -169,12 +172,20 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 var doc = JsonDocument.Parse(authJson!);
                 doc.RootElement.GetProperty("Version").GetString().Should().Be("1.0.0");
                 doc.RootElement.GetProperty("ClientId").GetString().Should().Be("test-client-id");
-                doc.RootElement.GetProperty("FederatedTokenData").GetProperty("ServiceConnectionId").GetString().Should().Be("sc-guid");
-                doc.RootElement.GetProperty("FederatedTokenData").GetProperty("SystemAccessToken").GetString().Should().Be("fake-token-value");
+                doc.RootElement.GetProperty("FederatedTokenPath").GetString().Should().NotBeNullOrEmpty();
+
+                // Verify the token file was written with correct data
+                var tokenFilePath = doc.RootElement.GetProperty("FederatedTokenPath").GetString()!;
+                File.Exists(tokenFilePath).Should().BeTrue();
+                var tokenDoc = JsonDocument.Parse(File.ReadAllText(tokenFilePath));
+                tokenDoc.RootElement.GetProperty("ServiceConnectionId").GetString().Should().Be("sc-guid");
+                tokenDoc.RootElement.GetProperty("SystemAccessToken").GetString().Should().Be("fake-token-value");
             }
             finally
             {
                 Environment.SetEnvironmentVariable("SYSTEM_ACCESSTOKEN", prevToken);
+                if (Directory.Exists(tempDir))
+                    Directory.Delete(tempDir, recursive: true);
             }
         }
 

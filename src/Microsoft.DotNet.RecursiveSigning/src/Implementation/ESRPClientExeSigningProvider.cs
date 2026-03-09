@@ -269,7 +269,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
         /// <summary>
         /// Builds auth JSON with federated token data for ESRPClient.exe.
-        /// ESRPClient.exe contract v1.2.162+ supports FederatedTokenData inline in auth JSON.
+        /// ESRPClient.exe contract v1.2.162+ supports FederatedTokenPath in auth JSON,
+        /// pointing to a file containing the federated token data.
         /// Unlike the ESRP CLI, the access token is NOT encrypted — it's passed as a raw string.
         /// </summary>
         private string BuildFederatedTokenAuthJson()
@@ -281,6 +282,23 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     $"Environment variable '{_configuration.SystemAccessTokenEnvVar}' is not set. " +
                     "Required for FederatedToken auth mode.");
             }
+
+            // Write federated token data to a temp file — ESRPClient.exe reads it via FederatedTokenPath
+            var tokenData = new
+            {
+                JobId = GetEnv("SYSTEM_JOBID"),
+                PlanId = GetEnv("SYSTEM_PLANID"),
+                ProjectId = GetEnv("SYSTEM_TEAMPROJECTID"),
+                Hub = GetEnv("SYSTEM_HOSTTYPE"),
+                Uri = Environment.GetEnvironmentVariable("SYSTEM_COLLECTIONURI")
+                    ?? GetEnv("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI"),
+                ServiceConnectionId = _configuration.ServiceConnectionId,
+                SystemAccessToken = accessToken.Trim(),
+            };
+
+            Directory.CreateDirectory(_configuration.TempDirectory);
+            var tokenFilePath = Path.Combine(_configuration.TempDirectory, "esrpclient-federated-token.json");
+            File.WriteAllText(tokenFilePath, JsonSerializer.Serialize(tokenData, s_compactJsonOptions));
 
             var auth = new
             {
@@ -296,17 +314,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     StoreName = "My",
                     SendX5c = false,
                 },
-                FederatedTokenData = new
-                {
-                    JobId = GetEnv("SYSTEM_JOBID"),
-                    PlanId = GetEnv("SYSTEM_PLANID"),
-                    ProjectId = GetEnv("SYSTEM_TEAMPROJECTID"),
-                    Hub = GetEnv("SYSTEM_HOSTTYPE"),
-                    Uri = Environment.GetEnvironmentVariable("SYSTEM_COLLECTIONURI")
-                        ?? GetEnv("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI"),
-                    ServiceConnectionId = _configuration.ServiceConnectionId,
-                    SystemAccessToken = accessToken.Trim(),
-                },
+                FederatedTokenPath = tokenFilePath,
             };
             return JsonSerializer.Serialize(auth, s_compactJsonOptions);
 
