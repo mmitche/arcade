@@ -279,11 +279,22 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         }
 
         [Fact]
-        public void EscapeJsonArg_EscapesQuotes()
+        public void EscapeJsonArg_EscapesQuotesWithOuterQuotes()
         {
             var input = "{\"key\":\"value\"}";
             var escaped = ESRPClientExeSigningProvider.EscapeJsonArg(input);
-            escaped.Should().Be("{\\\"key\\\":\\\"value\\\"}");
+            // Should be wrapped in outer quotes with inner quotes escaped
+            escaped.Should().Be("\"{\\\"key\\\":\\\"value\\\"}\"");
+        }
+
+        [Fact]
+        public void EscapeJsonArg_HandlesBackslashesBeforeQuotes()
+        {
+            // JSON with a Windows path: {"path":"C:\\Users\\test"}
+            var input = "{\"path\":\"C:\\\\Users\\\\test\"}";
+            var escaped = ESRPClientExeSigningProvider.EscapeJsonArg(input);
+            // Backslashes not before quotes stay as-is; quotes get escaped; outer quotes added
+            escaped.Should().Be("\"{\\\"path\\\":\\\"C:\\\\Users\\\\test\\\"}\"");
         }
 
         [Fact]

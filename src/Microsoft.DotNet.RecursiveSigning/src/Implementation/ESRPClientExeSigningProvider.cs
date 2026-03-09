@@ -377,12 +377,56 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         }
 
         /// <summary>
-        /// Escapes a JSON string for use as a command-line argument.
-        /// Replaces inner quotes with escaped quotes.
+        /// Escapes a JSON string for use as a command-line argument on Windows.
+        /// Wraps in outer double quotes and escapes inner backslashes and quotes
+        /// per the Windows CRT argv parsing rules.
         /// </summary>
         internal static string EscapeJsonArg(string json)
         {
-            return json.Replace("\"", "\\\"");
+            // Windows CRT rules inside a quoted argument:
+            // - 2n backslashes + " → n backslashes + end of quoted string
+            // - 2n+1 backslashes + " → n backslashes + literal "
+            // So we must double backslashes that precede a quote, then escape the quote.
+            var sb = new StringBuilder(json.Length + 20);
+            sb.Append('"');
+            for (int i = 0; i < json.Length; i++)
+            {
+                char c = json[i];
+                if (c == '\\')
+                {
+                    // Count consecutive backslashes
+                    int numBackslashes = 0;
+                    while (i < json.Length && json[i] == '\\')
+                    {
+                        numBackslashes++;
+                        i++;
+                    }
+
+                    if (i < json.Length && json[i] == '"')
+                    {
+                        // Backslashes before a quote: double them + escape the quote
+                        sb.Append('\\', numBackslashes * 2);
+                        sb.Append("\\\"");
+                    }
+                    else
+                    {
+                        // Backslashes not before a quote: emit as-is
+                        sb.Append('\\', numBackslashes);
+                        i--; // re-process current char
+                    }
+                }
+                else if (c == '"')
+                {
+                    sb.Append("\\\"");
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+            // Before closing quote, double any trailing backslashes
+            sb.Append('"');
+            return sb.ToString();
         }
 
         // ────────────────────────────────────────────────────────────────────────
