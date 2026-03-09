@@ -305,6 +305,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     StoreLocation = "LocalMachine",
                     StoreName = "My",
                     SendX5c = false,
+                    GetCertFromKeyVault = true,
+                    KeyVaultName = _configuration.KeyVaultName,
+                    KeyVaultCertName = _configuration.CertificateName,
                 },
                 FederatedTokenData = new
                 {

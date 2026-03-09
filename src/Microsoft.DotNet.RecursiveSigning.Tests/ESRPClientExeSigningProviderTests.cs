@@ -174,6 +174,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 doc.RootElement.GetProperty("ClientId").GetString().Should().Be("test-client-id");
                 doc.RootElement.GetProperty("AuthCert").GetProperty("GetCertFromKeyVault").GetBoolean().Should().BeTrue();
                 doc.RootElement.GetProperty("AuthCert").GetProperty("KeyVaultName").GetString().Should().Be("TestKeyVault");
+                doc.RootElement.GetProperty("RequestSigningCert").GetProperty("GetCertFromKeyVault").GetBoolean().Should().BeTrue();
+                doc.RootElement.GetProperty("RequestSigningCert").GetProperty("KeyVaultName").GetString().Should().Be("TestKeyVault");
                 doc.RootElement.GetProperty("FederatedTokenData").GetProperty("ServiceConnectionId").GetString().Should().Be("sc-guid");
                 doc.RootElement.GetProperty("FederatedTokenData").GetProperty("SystemAccessToken").GetString().Should().Be("fake-token-value");
             }
