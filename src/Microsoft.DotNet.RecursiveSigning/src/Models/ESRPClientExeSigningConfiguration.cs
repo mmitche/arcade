@@ -34,6 +34,33 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         public string? TenantId { get; set; }
 
         /// <summary>
+        /// Authentication mode.
+        /// </summary>
+        public ESRPAuthMode AuthMode { get; set; }
+
+        /// <summary>
+        /// For federated token mode: Azure DevOps service connection ID.
+        /// </summary>
+        public string ServiceConnectionId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// For federated token mode: name of the environment variable containing the ADO system access token.
+        /// </summary>
+        public string SystemAccessTokenEnvVar { get; set; } = "SYSTEM_ACCESSTOKEN";
+
+        /// <summary>
+        /// Key vault name for the ESRP request-signing (PKITA) certificate.
+        /// Used with federated token auth.
+        /// </summary>
+        public string KeyVaultName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Certificate name in the key vault.
+        /// Used with federated token auth.
+        /// </summary>
+        public string CertificateName { get; set; } = string.Empty;
+
+        /// <summary>
         /// Submission timeout in minutes. Converted to seconds for the config JSON
         /// <c>EsrpSessionTimeoutInSec</c> field.
         /// </summary>

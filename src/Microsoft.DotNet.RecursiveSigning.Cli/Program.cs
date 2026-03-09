@@ -283,6 +283,22 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                     return 1;
                 }
 
+                if (!dryRun && useFederatedToken)
+                {
+                    var missing = new List<string>();
+                    if (string.IsNullOrEmpty(esrpClientId)) missing.Add("--esrp-client-id");
+                    if (string.IsNullOrEmpty(esrpAppRegistration)) missing.Add("--esrp-app-registration");
+                    if (string.IsNullOrEmpty(esrpTenantId)) missing.Add("--esrp-tenant-id");
+                    if (string.IsNullOrEmpty(esrpKeyVaultName)) missing.Add("--esrp-keyvault-name");
+                    if (string.IsNullOrEmpty(esrpCertName)) missing.Add("--esrp-cert-name");
+                    if (string.IsNullOrEmpty(serviceConnectionId)) missing.Add("--service-connection-id");
+                    if (missing.Count > 0)
+                    {
+                        Console.Error.WriteLine($"Error: The following required ESRP options are missing for --esrp-client with --federated-token: {string.Join(", ", missing)}");
+                        return 1;
+                    }
+                }
+
                 var esrpClientConfig = new ESRPClientExeSigningConfiguration
                 {
                     ESRPClientExePath = esrpClientExePath ?? "",
@@ -293,6 +309,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                     EsrpClientId = esrpClientId,
                     ClientId = esrpAppRegistration,
                     TenantId = esrpTenantId,
+                    AuthMode = useFederatedToken ? ESRPAuthMode.FederatedToken : ESRPAuthMode.Certificate,
+                    ServiceConnectionId = serviceConnectionId ?? "",
+                    KeyVaultName = esrpKeyVaultName ?? "",
+                    CertificateName = esrpCertName ?? "",
                 };
                 services.AddSingleton(esrpClientConfig);
                 services.AddSingleton<IProcessRunner, DefaultProcessRunner>();

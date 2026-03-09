@@ -82,136 +82,71 @@ steps:
     env:
       SYSTEM_ACCESSTOKEN: $(System.AccessToken)
 
-# ── ESRPClient.exe provider: uses MicroBuild-installed certs ──
+# ── ESRPClient.exe provider: uses AzureCLI@2 for federated token auth ──
 - ${{ if eq(parameters.provider, 'esrp-client') }}:
-  - powershell: |
-      $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
-      $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
-
-      # ── Discover EsrpClient.exe from MicroBuild output folder ──
-      $microBuildDir = "$(Agent.TempDirectory)\MicroBuild"
-      Write-Host "Searching for EsrpClient.exe under: $microBuildDir"
-
-      $esrpClientExe = Get-ChildItem -Path $microBuildDir -Recurse -Filter "EsrpClient.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-      if (-not $esrpClientExe) {
-        Write-Error "EsrpClient.exe not found under $microBuildDir. Ensure MicroBuild signing plugin is installed with microbuildUseESRP: true."
-        exit 1
-      }
-      Write-Host "Found EsrpClient.exe at: $($esrpClientExe.FullName)"
-
-      # ── Discover ESRP auth certs installed by MicroBuild ──
-      # MicroBuild installs certs for the ESRP service connection.
-      # Enumerate certs and find the ones with GUID-like subject names (ESRP pattern).
-      Write-Host "`n=== Enumerating certificates in LocalMachine\My ==="
-      $certs = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object {
-        $_.Subject -match '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-      }
-      foreach ($cert in $certs) {
-        Write-Host "  Subject: $($cert.Subject)  Thumbprint: $($cert.Thumbprint)  NotAfter: $($cert.NotAfter)"
-      }
-
-      # Also check CurrentUser store
-      Write-Host "`n=== Enumerating certificates in CurrentUser\My ==="
-      $userCerts = Get-ChildItem -Path Cert:\CurrentUser\My | Where-Object {
-        $_.Subject -match '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-      }
-      foreach ($cert in $userCerts) {
-        Write-Host "  Subject: $($cert.Subject)  Thumbprint: $($cert.Thumbprint)  NotAfter: $($cert.NotAfter)"
-      }
-
-      # Try to find the ESRP request-signing cert and auth cert
-      $allCerts = @($certs) + @($userCerts) | Where-Object { $_ -ne $null }
-      $requestSignCert = $allCerts | Where-Object { $_.Subject -notmatch '\.microsoft\.com' } | Select-Object -First 1
-      $authCert = $allCerts | Where-Object { $_.Subject -match '\.microsoft\.com' } | Select-Object -First 1
-
-      if (-not $requestSignCert -or -not $authCert) {
-        Write-Host "WARNING: Could not find suitable ESRP certs. Available certs:"
-        Get-ChildItem -Path Cert:\LocalMachine\My | ForEach-Object { Write-Host "  $($_.Subject)" }
-        Get-ChildItem -Path Cert:\CurrentUser\My | ForEach-Object { Write-Host "  $($_.Subject)" }
-      }
-
-      # Build ESRP_AUTH_CONFIG dynamically based on discovered certs
-      $esrpAuthConfig = $null
-      if ($requestSignCert -and $authCert) {
-        # Extract the CN from subject
-        $requestCN = ($requestSignCert.Subject -replace 'CN=', '').Trim()
-        $authCN = ($authCert.Subject -replace 'CN=', '').Trim()
-        $requestStore = if ($requestSignCert.PSParentPath -match 'LocalMachine') { 'LocalMachine' } else { 'CurrentUser' }
-        $authStore = if ($authCert.PSParentPath -match 'LocalMachine') { 'LocalMachine' } else { 'CurrentUser' }
-
-        # The EsrpClientId is the GUID portion of the request-signing cert CN
-        $esrpClientId = $requestCN
-        # ClientId (AAD app) - use the auth cert base name (without .microsoft.com)
-        $clientId = $authCN -replace '\.microsoft\.com$', ''
-        # TenantId - use pme tenant for .NET
-        $tenantId = "975f013f-7f24-47e8-a7d3-abc4752bf346"
-
-        Write-Host "`nUsing request-signing cert CN: $requestCN (Store: $requestStore)"
-        Write-Host "Using auth cert CN: $authCN (Store: $authStore)"
-        Write-Host "EsrpClientId: $esrpClientId, ClientId: $clientId"
-
-        $authObj = @{
-          Version = "1.0.0"
-          ClientId = $clientId
-          EsrpClientId = $esrpClientId
-          TenantId = $tenantId
-          AuthenticationType = "AAD_CERT"
-          RequestSigningCert = @{
-            SubjectName = $requestCN
-            StoreLocation = $requestStore
-            StoreName = "My"
-            SendX5c = $false
-          }
-          AuthCert = @{
-            SubjectName = $authCN
-            StoreLocation = $authStore
-            StoreName = "My"
-            SendX5c = $true
-          }
-        }
-        $esrpAuthConfig = ($authObj | ConvertTo-Json -Compress -Depth 5)
-        Write-Host "Built ESRP_AUTH_CONFIG from discovered certs"
-      } else {
-        Write-Host "No suitable certs found. Using hardcoded auth config."
-        $esrpAuthConfig = $env:ESRP_AUTH_CONFIG
-      }
-
-      # Copy input files to a staging directory so ESRP can overwrite them
-      $stageDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-client"
-      New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
-
-      $inputArgs = @()
-      $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
-      foreach ($input in $inputs) {
-        $src = $input.Trim()
-        $dest = Join-Path $stageDir (Split-Path $src -Leaf)
-        Copy-Item -Path $src -Destination $dest -Force
-        Write-Host "Staged: $src -> $dest"
-        $inputArgs += "--input"
-        $inputArgs += $dest
-      }
-
-      $dryRunFlag = @()
-      if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
-
-      # Set the auth config for ESRPClient.exe
-      $env:ESRP_AUTH_CONFIG = $esrpAuthConfig
-
-      $providerArgs = @(
-        "--esrp-client",
-        "--esrp-client-exe-path", $esrpClientExe.FullName
-      )
-
-      Write-Host "`nProvider: esrp-client"
-      Write-Host "Inputs: ${{ parameters.inputs }}"
-      Write-Host "Dry-run: ${{ parameters.dryRun }}"
-
-      & $dotnet $cliDll `
-        --config "${{ parameters.configPath }}" --verbose `
-        @providerArgs @dryRunFlag @inputArgs
-
-      if ($LASTEXITCODE -ne 0) {
-        Write-Error "Recursive signing CLI (ESRPClient.exe) failed with exit code $LASTEXITCODE"
-        exit $LASTEXITCODE
-      }
+  - task: AzureCLI@2
     displayName: 'Recursive Sign${{ parameters.displayNameSuffix }}'
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnectionName }}
+      scriptType: 'ps'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
+        $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
+
+        # ── Discover EsrpClient.exe from MicroBuild output folder ──
+        $microBuildDir = "$(Agent.TempDirectory)\MicroBuild"
+        Write-Host "Searching for EsrpClient.exe under: $microBuildDir"
+
+        $esrpClientExe = Get-ChildItem -Path $microBuildDir -Recurse -Filter "EsrpClient.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $esrpClientExe) {
+          Write-Error "EsrpClient.exe not found under $microBuildDir. Ensure MicroBuild signing plugin is installed with microbuildUseESRP: true."
+          exit 1
+        }
+        Write-Host "Found EsrpClient.exe at: $($esrpClientExe.FullName)"
+
+        # Copy input files to a staging directory so ESRP can overwrite them
+        $stageDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-client"
+        New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+
+        $inputArgs = @()
+        $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
+        foreach ($input in $inputs) {
+          $src = $input.Trim()
+          $dest = Join-Path $stageDir (Split-Path $src -Leaf)
+          Copy-Item -Path $src -Destination $dest -Force
+          Write-Host "Staged: $src -> $dest"
+          $inputArgs += "--input"
+          $inputArgs += $dest
+        }
+
+        $dryRunFlag = @()
+        if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
+
+        # Same federated token auth as ESRP CLI
+        $providerArgs = @(
+          "--esrp-client",
+          "--esrp-client-exe-path", $esrpClientExe.FullName,
+          "--federated-token",
+          "--service-connection-id", "${{ parameters.serviceConnectionGuid }}",
+          "--esrp-client-id",       "${{ parameters.esrpId }}",
+          "--esrp-app-registration", "${{ parameters.esrpClientId }}",
+          "--esrp-tenant-id",       "${{ parameters.esrpTenantId }}",
+          "--esrp-keyvault-name",   "${{ parameters.keyVaultName }}",
+          "--esrp-cert-name",       "${{ parameters.certName }}"
+        )
+
+        Write-Host "Provider: esrp-client"
+        Write-Host "Inputs: ${{ parameters.inputs }}"
+        Write-Host "Dry-run: ${{ parameters.dryRun }}"
+
+        & $dotnet $cliDll `
+          --config "${{ parameters.configPath }}" --verbose `
+          @providerArgs @dryRunFlag @inputArgs
+
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Recursive signing CLI (ESRPClient.exe) failed with exit code $LASTEXITCODE"
+          exit $LASTEXITCODE
+        }
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
