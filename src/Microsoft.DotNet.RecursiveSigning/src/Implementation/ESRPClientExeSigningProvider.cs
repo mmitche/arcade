@@ -269,8 +269,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
         /// <summary>
         /// Builds auth JSON with federated token data for ESRPClient.exe.
-        /// ESRPClient.exe contract v1.2.162+ supports FederatedTokenPath in auth JSON,
-        /// pointing to a file containing the federated token data.
+        /// ESRPClient.exe contract v1.2.162+ supports FederatedTokenData inline in auth JSON.
         /// Unlike the ESRP CLI, the access token is NOT encrypted — it's passed as a raw string.
         /// </summary>
         private string BuildFederatedTokenAuthJson()
@@ -282,23 +281,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     $"Environment variable '{_configuration.SystemAccessTokenEnvVar}' is not set. " +
                     "Required for FederatedToken auth mode.");
             }
-
-            // Write federated token data to a temp file — ESRPClient.exe reads it via FederatedTokenPath
-            var tokenData = new
-            {
-                JobId = GetEnv("SYSTEM_JOBID"),
-                PlanId = GetEnv("SYSTEM_PLANID"),
-                ProjectId = GetEnv("SYSTEM_TEAMPROJECTID"),
-                Hub = GetEnv("SYSTEM_HOSTTYPE"),
-                Uri = Environment.GetEnvironmentVariable("SYSTEM_COLLECTIONURI")
-                    ?? GetEnv("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI"),
-                ServiceConnectionId = _configuration.ServiceConnectionId,
-                SystemAccessToken = accessToken.Trim(),
-            };
-
-            Directory.CreateDirectory(_configuration.TempDirectory);
-            var tokenFilePath = Path.Combine(_configuration.TempDirectory, "esrpclient-federated-token.json");
-            File.WriteAllText(tokenFilePath, JsonSerializer.Serialize(tokenData, s_compactJsonOptions));
 
             var auth = new
             {
@@ -324,7 +306,17 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     StoreName = "My",
                     SendX5c = false,
                 },
-                FederatedTokenPath = tokenFilePath,
+                FederatedTokenData = new
+                {
+                    JobId = GetEnv("SYSTEM_JOBID"),
+                    PlanId = GetEnv("SYSTEM_PLANID"),
+                    ProjectId = GetEnv("SYSTEM_TEAMPROJECTID"),
+                    Hub = GetEnv("SYSTEM_HOSTTYPE"),
+                    Uri = Environment.GetEnvironmentVariable("SYSTEM_COLLECTIONURI")
+                        ?? GetEnv("SYSTEM_TEAMFOUNDATIONCOLLECTIONURI"),
+                    ServiceConnectionId = _configuration.ServiceConnectionId,
+                    SystemAccessToken = accessToken.Trim(),
+                },
             };
             return JsonSerializer.Serialize(auth, s_compactJsonOptions);
 
@@ -387,56 +379,13 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         }
 
         /// <summary>
-        /// Escapes a JSON string for use as a command-line argument on Windows.
-        /// Wraps in outer double quotes and escapes inner backslashes and quotes
-        /// per the Windows CRT argv parsing rules.
+        /// Escapes a JSON string for use as a command-line argument.
+        /// Replaces inner quotes with escaped quotes, matching the
+        /// approach used by the Sign repo's ESRPClientExe.EscapeJson.
         /// </summary>
         internal static string EscapeJsonArg(string json)
         {
-            // Windows CRT rules inside a quoted argument:
-            // - 2n backslashes + " → n backslashes + end of quoted string
-            // - 2n+1 backslashes + " → n backslashes + literal "
-            // So we must double backslashes that precede a quote, then escape the quote.
-            var sb = new StringBuilder(json.Length + 20);
-            sb.Append('"');
-            for (int i = 0; i < json.Length; i++)
-            {
-                char c = json[i];
-                if (c == '\\')
-                {
-                    // Count consecutive backslashes
-                    int numBackslashes = 0;
-                    while (i < json.Length && json[i] == '\\')
-                    {
-                        numBackslashes++;
-                        i++;
-                    }
-
-                    if (i < json.Length && json[i] == '"')
-                    {
-                        // Backslashes before a quote: double them + escape the quote
-                        sb.Append('\\', numBackslashes * 2);
-                        sb.Append("\\\"");
-                    }
-                    else
-                    {
-                        // Backslashes not before a quote: emit as-is
-                        sb.Append('\\', numBackslashes);
-                        i--; // re-process current char
-                    }
-                }
-                else if (c == '"')
-                {
-                    sb.Append("\\\"");
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            // Before closing quote, double any trailing backslashes
-            sb.Append('"');
-            return sb.ToString();
+            return json.Replace("\"", "\\\"");
         }
 
         // ────────────────────────────────────────────────────────────────────────

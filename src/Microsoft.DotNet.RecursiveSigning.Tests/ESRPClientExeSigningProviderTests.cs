@@ -154,12 +154,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         }
 
         [Fact]
-        public void BuildAuthJson_FederatedToken_IncludesFederatedTokenPath()
+        public void BuildAuthJson_FederatedToken_IncludesFederatedTokenData()
         {
-            var tempDir = Path.Combine(Path.GetTempPath(), "esrpclient-test-" + Guid.NewGuid().ToString("N")[..8]);
             var config = CreateConfig(authMode: ESRPAuthMode.FederatedToken);
             config.ServiceConnectionId = "sc-guid";
-            config.TempDirectory = tempDir;
+            config.KeyVaultName = "TestKeyVault";
+            config.CertificateName = "TestCert";
             var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
 
             var prevToken = Environment.GetEnvironmentVariable("SYSTEM_ACCESSTOKEN");
@@ -172,20 +172,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 var doc = JsonDocument.Parse(authJson!);
                 doc.RootElement.GetProperty("Version").GetString().Should().Be("1.0.0");
                 doc.RootElement.GetProperty("ClientId").GetString().Should().Be("test-client-id");
-                doc.RootElement.GetProperty("FederatedTokenPath").GetString().Should().NotBeNullOrEmpty();
-
-                // Verify the token file was written with correct data
-                var tokenFilePath = doc.RootElement.GetProperty("FederatedTokenPath").GetString()!;
-                File.Exists(tokenFilePath).Should().BeTrue();
-                var tokenDoc = JsonDocument.Parse(File.ReadAllText(tokenFilePath));
-                tokenDoc.RootElement.GetProperty("ServiceConnectionId").GetString().Should().Be("sc-guid");
-                tokenDoc.RootElement.GetProperty("SystemAccessToken").GetString().Should().Be("fake-token-value");
+                doc.RootElement.GetProperty("AuthCert").GetProperty("GetCertFromKeyVault").GetBoolean().Should().BeTrue();
+                doc.RootElement.GetProperty("AuthCert").GetProperty("KeyVaultName").GetString().Should().Be("TestKeyVault");
+                doc.RootElement.GetProperty("FederatedTokenData").GetProperty("ServiceConnectionId").GetString().Should().Be("sc-guid");
+                doc.RootElement.GetProperty("FederatedTokenData").GetProperty("SystemAccessToken").GetString().Should().Be("fake-token-value");
             }
             finally
             {
                 Environment.SetEnvironmentVariable("SYSTEM_ACCESSTOKEN", prevToken);
-                if (Directory.Exists(tempDir))
-                    Directory.Delete(tempDir, recursive: true);
             }
         }
 
@@ -279,22 +273,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         }
 
         [Fact]
-        public void EscapeJsonArg_EscapesQuotesWithOuterQuotes()
+        public void EscapeJsonArg_EscapesQuotes()
         {
             var input = "{\"key\":\"value\"}";
             var escaped = ESRPClientExeSigningProvider.EscapeJsonArg(input);
-            // Should be wrapped in outer quotes with inner quotes escaped
-            escaped.Should().Be("\"{\\\"key\\\":\\\"value\\\"}\"");
-        }
-
-        [Fact]
-        public void EscapeJsonArg_HandlesBackslashesBeforeQuotes()
-        {
-            // JSON with a Windows path: {"path":"C:\\Users\\test"}
-            var input = "{\"path\":\"C:\\\\Users\\\\test\"}";
-            var escaped = ESRPClientExeSigningProvider.EscapeJsonArg(input);
-            // Backslashes not before quotes stay as-is; quotes get escaped; outer quotes added
-            escaped.Should().Be("\"{\\\"path\\\":\\\"C:\\\\Users\\\\test\\\"}\"");
+            escaped.Should().Be("{\\\"key\\\":\\\"value\\\"}");
         }
 
         [Fact]
