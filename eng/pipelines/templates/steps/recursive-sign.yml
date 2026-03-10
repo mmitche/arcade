@@ -37,6 +37,11 @@ steps:
         $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
         $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
 
+        # Output signed files to a staging directory to avoid in-place write conflicts
+        # (the input files may be locked by the running dotnet process).
+        $outputDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-cli-output"
+        New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+
         # Pass input patterns directly to the CLI — it handles glob expansion internally.
         $inputArgs = @()
         $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
@@ -61,10 +66,12 @@ steps:
 
         Write-Host "Provider: esrp-cli"
         Write-Host "Inputs: ${{ parameters.inputs }}"
+        Write-Host "Output: $outputDir"
         Write-Host "Dry-run: ${{ parameters.dryRun }}"
 
         & $dotnet $cliDll `
           --config "${{ parameters.configPath }}" --verbose `
+          --output $outputDir `
           @providerArgs @dryRunFlag @inputArgs
 
         if ($LASTEXITCODE -ne 0) {
@@ -173,6 +180,10 @@ steps:
         $env:ESRP_AUTH_CONFIG = $authJson
         Write-Host "ESRP_AUTH_CONFIG set (cert-based AAD_CERT auth)"
 
+        # Output signed files to a staging directory to avoid in-place write conflicts
+        $outputDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-client-output"
+        New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+
         # Pass input patterns directly to the CLI — it handles glob expansion internally.
         $inputArgs = @()
         $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
@@ -189,10 +200,12 @@ steps:
 
         Write-Host "Provider: esrp-client (bundled, cert auth via ESRP_AUTH_CONFIG)"
         Write-Host "Inputs: ${{ parameters.inputs }}"
+        Write-Host "Output: $outputDir"
         Write-Host "Dry-run: ${{ parameters.dryRun }}"
 
         & $dotnet $cliDll `
           --config "${{ parameters.configPath }}" --verbose `
+          --output $outputDir `
           @providerArgs @dryRunFlag @inputArgs
 
         if ($LASTEXITCODE -ne 0) {
