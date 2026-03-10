@@ -94,6 +94,16 @@ steps:
         $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
         $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
 
+        # Diagnostic: list certificates installed by MicroBuild in LocalMachine\My
+        Write-Host "=== Certificates in LocalMachine\My ==="
+        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", "LocalMachine")
+        $store.Open("ReadOnly")
+        foreach ($cert in $store.Certificates) {
+          Write-Host "  Subject: $($cert.Subject)  Thumbprint: $($cert.Thumbprint)  NotAfter: $($cert.NotAfter)"
+        }
+        $store.Close()
+        Write-Host "=== End Certificates ==="
+
         # Build auth JSON for ESRPClient.exe using certs installed by MicroBuild
         $authJson = @{
           Version = "1.0.0"
