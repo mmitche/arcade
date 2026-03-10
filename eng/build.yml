@@ -20,13 +20,13 @@ stages:
     parameters:
       artifacts:
         publish:
-          artifacts: true
+          artifacts: false
           logs: true
           manifests: true
       enableMicrobuild: true
       microbuildUseESRP: ${{ parameters.microbuildUseESRP }}
-      enableSourceIndex: true
-      enableSourceBuild: true
+      enableSourceIndex: false
+      enableSourceBuild: false
       workspace:
         clean: all
       jobs:
@@ -64,11 +64,14 @@ stages:
         - template: /eng/pipelines/templates/steps/recursive-sign.yml@self
           parameters:
             configPath: 'src/Microsoft.DotNet.RecursiveSigning.Cli/signing-config.json'
-            inputs: '$(System.DefaultWorkingDirectory)/artifacts/bin/Microsoft.DotNet.RecursiveSigning/$(_BuildConfig)/net10.0/Microsoft.DotNet.RecursiveSigning.dll'
+            inputs: '$(System.DefaultWorkingDirectory)/artifacts/packages/*.nupkg'
             provider: 'esrp-client'
             esrpId: 'dec434ad-6bd4-4a20-b400-4bf6db7fc3fb'
             esrpClientId: 'c4428c30-2253-4654-ab5e-cdb9ff6d850c'
             displayNameSuffix: ' (ESRPClient.exe)'
+
+        - script: |
+            ./eng/common/dotnet.ps1 nuget push "$(System.DefaultWorkingDirectory)/artifacts/packages/Microsoft.DotNet.RecursiveSigning.*.nupkg" --source https://pkgs.dev.azure.com/dnceng/internal/_packaging/dotnet-sign-test-feed/nuget/v3/index.json --api-key az
 
 - stage: ValidateSdk
   displayName: Validate Arcade SDK

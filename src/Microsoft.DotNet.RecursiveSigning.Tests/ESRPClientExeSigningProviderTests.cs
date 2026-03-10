@@ -236,6 +236,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 @"C:\temp\submission.json",
                 "{\"Version\":\"1.0.0\"}",
                 "{\"Version\":\"1.0.0\"}",
+                "{\"Version\":\"1.0.0\"}",
                 @"C:\temp\output.json",
                 @"C:\temp\output.txt");
 
@@ -243,6 +244,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             args.Should().Contain("-i");
             args.Should().Contain("-a");
             args.Should().Contain("-c");
+            args.Should().Contain("-p");
             args.Should().Contain("-o");
             args.Should().Contain("-l Verbose");
             args.Should().Contain("-f");
@@ -257,6 +259,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var args = provider.BuildArguments(
                 @"C:\temp\submission.json",
                 null,
+                "{\"Version\":\"1.0.0\"}",
                 "{\"Version\":\"1.0.0\"}",
                 @"C:\temp\output.json",
                 @"C:\temp\output.txt");
@@ -274,10 +277,68 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 @"C:\temp\submission.json",
                 "{\"Version\":\"1.0.0\"}",
                 null,
+                "{\"Version\":\"1.0.0\"}",
                 @"C:\temp\output.json",
                 @"C:\temp\output.txt");
 
             args.Should().NotContain(" -c ");
+        }
+
+        [Fact]
+        public void BuildArguments_WithNullPolicy_OmitsPolicyFlag()
+        {
+            var config = CreateConfig();
+            var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
+
+            var args = provider.BuildArguments(
+                @"C:\temp\submission.json",
+                "{\"Version\":\"1.0.0\"}",
+                "{\"Version\":\"1.0.0\"}",
+                null,
+                @"C:\temp\output.json",
+                @"C:\temp\output.txt");
+
+            args.Should().NotContain(" -p ");
+        }
+
+        [Fact]
+        public void BuildPolicyJson_ReturnsDefault_WhenEnvVarNotSet()
+        {
+            var config = CreateConfig();
+            var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
+
+            var prev = Environment.GetEnvironmentVariable(ESRPClientExeSigningProvider.PolicyConfigEnvVar);
+            try
+            {
+                Environment.SetEnvironmentVariable(ESRPClientExeSigningProvider.PolicyConfigEnvVar, null);
+                var json = provider.BuildPolicyJson();
+                json.Should().NotBeNull();
+                var doc = JsonDocument.Parse(json!);
+                doc.RootElement.GetProperty("Version").GetString().Should().Be("1.0.0");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(ESRPClientExeSigningProvider.PolicyConfigEnvVar, prev);
+            }
+        }
+
+        [Fact]
+        public void BuildPolicyJson_ReturnsNull_WhenEnvVarSet()
+        {
+            var config = CreateConfig();
+            var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
+
+            var prev = Environment.GetEnvironmentVariable(ESRPClientExeSigningProvider.PolicyConfigEnvVar);
+            try
+            {
+                Environment.SetEnvironmentVariable(ESRPClientExeSigningProvider.PolicyConfigEnvVar, "{\"Version\":\"1.0.0\"}");
+                var json = provider.BuildPolicyJson();
+                json.Should().BeNull();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(ESRPClientExeSigningProvider.PolicyConfigEnvVar, prev);
+            }
         }
 
         [Fact]

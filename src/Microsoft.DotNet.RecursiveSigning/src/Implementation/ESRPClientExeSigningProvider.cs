@@ -62,13 +62,16 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 // Build config JSON (skipped if ESRP_SESSION_CONFIG env var is set)
                 var configJson = BuildConfigJson();
 
+                // Build policy JSON (skipped if ESRP_POLICY_CONFIG env var is set)
+                var policyJson = BuildPolicyJson();
+
                 // Build auth JSON (optional - from params or ESRP_AUTH_CONFIG env var)
                 var authJson = BuildAuthJson();
 
                 var outputJsonFile = Path.Combine(workDir, "output.json");
                 var outputTxtFile = Path.Combine(workDir, "output.txt");
 
-                var arguments = BuildArguments(submissionFile, authJson, configJson, outputJsonFile, outputTxtFile);
+                var arguments = BuildArguments(submissionFile, authJson, configJson, policyJson, outputJsonFile, outputTxtFile);
 
                 LogVerbose("ESRPClient.exe submission JSON:\n{Json}", submissionJson);
                 LogVerbose("ESRPClient.exe arguments: {Args}", RedactAuthArguments(arguments));
@@ -135,6 +138,16 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             else
             {
                 Logger.LogInformation("Config JSON: (provided via {EnvVar} environment variable)", SessionConfigEnvVar);
+            }
+
+            var policyJson = BuildPolicyJson();
+            if (policyJson != null)
+            {
+                Logger.LogInformation("Policy JSON: {Json}", policyJson);
+            }
+            else
+            {
+                Logger.LogInformation("Policy JSON: (provided via {EnvVar} environment variable)", PolicyConfigEnvVar);
             }
 
             foreach (var (certName, (_, groupFiles)) in groups)
@@ -284,6 +297,29 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             return JsonSerializer.Serialize(config, CompactJsonOptions);
         }
 
+        /// <summary>
+        /// Environment variable name that ESRPClient.exe reads for policy configuration.
+        /// When this is set, the policy JSON is not built or passed on the command line.
+        /// </summary>
+        internal const string PolicyConfigEnvVar = "ESRP_POLICY_CONFIG";
+
+        /// <summary>
+        /// Builds the ESRP policy JSON.
+        /// Returns null if the <c>ESRP_POLICY_CONFIG</c> environment variable is set,
+        /// since ESRPClient.exe will read policy from there instead.
+        /// </summary>
+        internal string? BuildPolicyJson()
+        {
+            var envPolicyConfig = Environment.GetEnvironmentVariable(PolicyConfigEnvVar);
+            if (!string.IsNullOrEmpty(envPolicyConfig))
+            {
+                Logger.LogInformation("Using policy configuration from {EnvVar} environment variable", PolicyConfigEnvVar);
+                return null;
+            }
+
+            return JsonSerializer.Serialize(new { Version = "1.0.0" }, CompactJsonOptions);
+        }
+
         // ────────────────────────────────────────────────────────────────────────
         //  CLI argument construction
         // ────────────────────────────────────────────────────────────────────────
@@ -295,6 +331,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             string submissionFile,
             string? authJson,
             string? configJson,
+            string? policyJson,
             string outputJsonFile,
             string outputTxtFile)
         {
@@ -309,6 +346,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             if (!string.IsNullOrEmpty(configJson))
             {
                 sb.Append($" -c {EscapeJsonArg(configJson)}");
+            }
+
+            if (!string.IsNullOrEmpty(policyJson))
+            {
+                sb.Append($" -p {EscapeJsonArg(policyJson)}");
             }
 
             sb.Append($" -o \"{outputJsonFile}\"");
