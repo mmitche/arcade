@@ -37,20 +37,12 @@ steps:
         $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
         $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
 
-        # Copy input files to a staging directory so ESRP can overwrite them
-        # (original files may be locked by the running dotnet process).
-        $stageDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-cli"
-        New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
-
+        # Pass input patterns directly to the CLI — it handles glob expansion internally.
         $inputArgs = @()
         $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
         foreach ($input in $inputs) {
-          $src = $input.Trim()
-          $dest = Join-Path $stageDir (Split-Path $src -Leaf)
-          Copy-Item -Path $src -Destination $dest -Force
-          Write-Host "Staged: $src -> $dest"
           $inputArgs += "--input"
-          $inputArgs += $dest
+          $inputArgs += $input.Trim()
         }
 
         $dryRunFlag = @()
@@ -181,19 +173,12 @@ steps:
         $env:ESRP_AUTH_CONFIG = $authJson
         Write-Host "ESRP_AUTH_CONFIG set (cert-based AAD_CERT auth)"
 
-        # Copy input files to a staging directory so ESRP can overwrite them
-        $stageDir = Join-Path "$(Agent.TempDirectory)" "recursive-sign-esrp-client"
-        New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
-
+        # Pass input patterns directly to the CLI — it handles glob expansion internally.
         $inputArgs = @()
         $inputs = "${{ parameters.inputs }}".Split(';', [System.StringSplitOptions]::RemoveEmptyEntries)
         foreach ($input in $inputs) {
-          $src = $input.Trim()
-          $dest = Join-Path $stageDir (Split-Path $src -Leaf)
-          Copy-Item -Path $src -Destination $dest -Force
-          Write-Host "Staged: $src -> $dest"
           $inputArgs += "--input"
-          $inputArgs += $dest
+          $inputArgs += $input.Trim()
         }
 
         $dryRunFlag = @()
