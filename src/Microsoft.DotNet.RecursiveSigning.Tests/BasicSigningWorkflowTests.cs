@@ -35,6 +35,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             Name = name;
             AlwaysSign = alwaysSign;
         }
+
+        public IDictionary<string, object?> SerializeDetails() =>
+            new Dictionary<string, object?> { ["name"] = Name, ["alwaysSign"] = AlwaysSign };
     }
 
     /// <summary>

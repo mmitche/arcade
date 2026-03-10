@@ -59,7 +59,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                 Description = "Directory for ESRP CLI invocation logs (default: <temp>/esrp-logs)"
             };
 
-            var esrpOption = new Option<bool>("--esrp")
+            var esrpOption = new Option<bool>("--esrp-cli")
             {
                 Description = "Use ESRP CLI signing provider instead of dry-run"
             };
@@ -71,7 +71,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
 
             var dryRunOption = new Option<bool>("--dry-run")
             {
-                Description = "Print ESRP submission JSON without invoking the signing tool (requires --esrp or --esrp-client)"
+                Description = "Print ESRP submission JSON without invoking the signing tool. If neither --esrp-cli nor --esrp-client is specified, uses a dry-run signing provider."
+            };
+
+            var signingReportOption = new Option<string?>("--signing-report")
+            {
+                Description = "Path to write a JSON signing report describing certificates, container relationships, and provider-specific details"
             };
 
             var esrpCliPathOption = new Option<string?>("--esrp-cli-path")
@@ -136,6 +141,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             rootCommand.Options.Add(esrpOption);
             rootCommand.Options.Add(esrpClientOption);
             rootCommand.Options.Add(dryRunOption);
+            rootCommand.Options.Add(signingReportOption);
             rootCommand.Options.Add(esrpCliPathOption);
 
             rootCommand.Options.Add(rootOption);
@@ -158,6 +164,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                 var useESRP = result.GetValue(esrpOption);
                 var useESRPClient = result.GetValue(esrpClientOption);
                 var dryRun = result.GetValue(dryRunOption);
+                var signingReportPath = result.GetValue(signingReportOption);
                 var esrpCliPath = result.GetValue(esrpCliPathOption);
                 var rootDirectory = result.GetValue(rootOption);
                 var esrpClientId = result.GetValue(esrpClientIdOption);
@@ -170,7 +177,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
 
                 return await RunAsync(
                     configPath, inputPatterns, tempDirectory, outputDirectory, verbose, logDir,
-                    useESRP, useESRPClient, dryRun, esrpCliPath, rootDirectory,
+                    useESRP, useESRPClient, dryRun, signingReportPath, esrpCliPath, rootDirectory,
                     esrpClientId, esrpAppRegistration, esrpTenantId, esrpKeyVaultName, esrpCertName,
                     useFederatedToken, serviceConnectionId);
             });
@@ -188,6 +195,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             bool useESRP,
             bool useESRPClient,
             bool dryRun,
+            string? signingReportPath,
             string? esrpCliPath,
             string? rootDirectory,
             string? esrpClientId,
@@ -225,7 +233,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
 
             if (useESRP && useESRPClient)
             {
-                Console.Error.WriteLine("Error: --esrp and --esrp-client are mutually exclusive. Choose one.");
+                Console.Error.WriteLine("Error: --esrp-cli and --esrp-client are mutually exclusive. Choose one.");
                 return 1;
             }
 
@@ -307,6 +315,20 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                 new SigningOptions());
 
             var result = await recursiveSigning.SignAsync(request);
+
+            // Write signing report if requested
+            if (!string.IsNullOrEmpty(signingReportPath))
+            {
+                var signingGraph = provider.GetRequiredService<ISigningGraph>();
+                var reportJson = SigningGraphSerializer.Serialize(signingGraph);
+                var reportDir = Path.GetDirectoryName(signingReportPath);
+                if (!string.IsNullOrEmpty(reportDir))
+                {
+                    Directory.CreateDirectory(reportDir);
+                }
+                await File.WriteAllTextAsync(signingReportPath, reportJson);
+                Console.WriteLine($"Signing report written to: {signingReportPath}");
+            }
 
             Console.WriteLine($"Success: {result.Success}");
             Console.WriteLine($"Signed files: {result.SignedFiles.Count}");

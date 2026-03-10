@@ -57,7 +57,7 @@ steps:
         if ("${{ parameters.dryRun }}" -eq "true") { $dryRunFlag += "--dry-run" }
 
         $providerArgs = @(
-          "--esrp",
+          "--esrp-cli",
           "--federated-token",
           "--service-connection-id", "${{ parameters.serviceConnectionGuid }}",
           "--esrp-client-id",       "${{ parameters.esrpId }}",

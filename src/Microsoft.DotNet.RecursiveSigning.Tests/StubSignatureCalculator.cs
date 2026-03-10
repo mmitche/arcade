@@ -3,6 +3,7 @@
 
 ﻿#nullable enable
 
+using System.Collections.Generic;
 using Microsoft.DotNet.RecursiveSigning.Abstractions;
 using Microsoft.DotNet.RecursiveSigning.Models;
 
@@ -32,6 +33,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             {
                 Name = name;
             }
+
+            public IDictionary<string, object?> SerializeDetails() =>
+                new Dictionary<string, object?> { ["name"] = Name };
         }
     }
 }

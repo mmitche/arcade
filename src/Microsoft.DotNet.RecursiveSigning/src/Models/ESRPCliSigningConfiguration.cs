@@ -8,7 +8,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
     /// <summary>
     /// Configuration for the ESRP CLI signing provider.
     /// </summary>
-    public sealed class ESRPCliSigningConfiguration
+    public sealed class ESRPCliSigningConfiguration : ESRPSigningConfiguration
     {
         /// <summary>
         /// Path to esrpcli.dll.
@@ -101,32 +101,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         public int BatchSize { get; set; } = 400;
 
         /// <summary>
-        /// Temp directory for working files (pattern files, submission JSON, encrypted auth artifacts).
-        /// </summary>
-        public string TempDirectory { get; set; } = string.Empty;
-
-        /// <summary>
         /// Root directory that file paths are made relative to (the ESRP CLI -f flag).
         /// </summary>
         public string RootDirectory { get; set; } = string.Empty;
 
-        /// <summary>
-        /// Directory where ESRP CLI invocation logs are written.
-        /// Each invocation writes stdout/stderr to a separate file.
-        /// When empty, logs are only written through the ILogger pipeline.
-        /// </summary>
-        public string LogDirectory { get; set; } = string.Empty;
-
-        /// <summary>
-        /// When true, the provider logs the submission JSON and CLI arguments without invoking the ESRP CLI.
-        /// </summary>
-        public bool DryRun { get; set; }
-
-        /// <summary>
-        /// When true, logs submission JSON, CLI arguments, and full stdout/stderr at Information level
-        /// for diagnostic purposes.
-        /// </summary>
-        public bool VerboseLogging { get; set; }
     }
 
     /// <summary>

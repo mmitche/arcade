@@ -8,7 +8,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
     /// <summary>
     /// Configuration for the ESRPClient.exe signing provider.
     /// </summary>
-    public sealed class ESRPClientExeSigningConfiguration
+    public sealed class ESRPClientExeSigningConfiguration : ESRPSigningConfiguration
     {
         /// <summary>
         /// Path to EsrpClient.exe.
@@ -44,27 +44,5 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         /// </summary>
         public int MaxDegreeOfParallelism { get; set; } = 4;
 
-        /// <summary>
-        /// Temp directory for working files (submission JSON, output files).
-        /// </summary>
-        public string TempDirectory { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Directory where invocation logs are written.
-        /// Each invocation writes stdout/stderr to a separate file.
-        /// </summary>
-        public string LogDirectory { get; set; } = string.Empty;
-
-        /// <summary>
-        /// When true, the provider logs the submission JSON and arguments without
-        /// invoking ESRPClient.exe.
-        /// </summary>
-        public bool DryRun { get; set; }
-
-        /// <summary>
-        /// When true, logs submission JSON, arguments, and full stdout/stderr at
-        /// Information level for diagnostic purposes.
-        /// </summary>
-        public bool VerboseLogging { get; set; }
     }
 }

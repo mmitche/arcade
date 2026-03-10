@@ -9,7 +9,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -23,19 +22,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
     /// Builds a full submission JSON with SignBatches (one per certificate) and submits
     /// all files in a single ESRPClient.exe invocation.
     /// </summary>
-    public sealed class ESRPClientExeSigningProvider : ISigningProvider
+    public sealed class ESRPClientExeSigningProvider : ESRPSigningProviderBase
     {
         private readonly ESRPClientExeSigningConfiguration _configuration;
-        private readonly IProcessRunner _processRunner;
-        private readonly ILogger<ESRPClientExeSigningProvider> _logger;
-
-        private static readonly JsonSerializerOptions s_prettyJsonOptions = new()
-        {
-            WriteIndented = true,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        };
-
-        private static readonly JsonSerializerOptions s_compactJsonOptions = new();
 
         /// <summary>
         /// Environment variable name that ESRPClient.exe reads for auth configuration.
@@ -47,32 +36,19 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             ESRPClientExeSigningConfiguration configuration,
             IProcessRunner processRunner,
             ILogger<ESRPClientExeSigningProvider> logger)
+            : base(processRunner, logger)
         {
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-            _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<bool> SignFilesAsync(
-            IReadOnlyList<(FileNode node, string outputPath)> files,
-            CancellationToken cancellationToken = default)
+        protected override ESRPSigningConfiguration Configuration => _configuration;
+        protected override string ProviderName => "ESRPClient.exe";
+
+        protected override async Task<bool> ExecuteSigningAsync(
+            Dictionary<string, (ESRPCertificateIdentifier cert, List<(FileNode node, string outputPath)> files)> groups,
+            IReadOnlyList<(FileNode node, string outputPath)> allFiles,
+            CancellationToken cancellationToken)
         {
-            if (files == null || files.Count == 0)
-            {
-                return true;
-            }
-
-            var groups = GroupFilesByCertificate(files);
-
-            if (_configuration.DryRun)
-            {
-                LogDryRun(groups);
-                return true;
-            }
-
-            _logger.LogInformation("Signing {Count} file(s) across {Groups} certificate group(s) via ESRPClient.exe",
-                files.Count, groups.Count);
-
             var workDir = Path.Combine(_configuration.TempDirectory, Guid.NewGuid().ToString("N")[..8]);
             Directory.CreateDirectory(workDir);
 
@@ -98,7 +74,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 LogVerbose("ESRPClient.exe submission JSON:\n{Json}", submissionJson);
                 LogVerbose("ESRPClient.exe arguments: {Args}", RedactAuthArguments(arguments));
 
-                var result = await _processRunner.RunAsync(
+                var result = await ProcessRunner.RunAsync(
                     _configuration.ESRPClientExePath, arguments, cancellationToken);
 
                 LogVerbose("ESRPClient.exe stdout:\n{Stdout}", result.StandardOutput);
@@ -108,7 +84,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 }
 
                 // Write invocation log
-                WriteInvocationLog(result, arguments);
+                WriteInvocationLog(
+                    "ESRPClient.exe Invocation", "esrpclient",
+                    result, RedactAuthArguments(arguments));
 
                 // Parse output
                 var outputJson = File.Exists(outputJsonFile) ? File.ReadAllText(outputJsonFile) : "";
@@ -118,11 +96,22 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
                 if (!parsed.Success)
                 {
-                    _logger.LogError("ESRPClient.exe signing failed: {Error}", parsed.ErrorMessage);
+                    Logger.LogError("ESRPClient.exe signing failed: {Error}", parsed.ErrorMessage);
                     return false;
                 }
 
-                _logger.LogInformation("ESRPClient.exe signing succeeded for all {Count} file(s)", files.Count);
+                Logger.LogInformation("ESRPClient.exe signing succeeded for all {Count} file(s)", allFiles.Count);
+
+                // Attach provider-specific signing details to each node
+                foreach (var (certName, (_, groupFiles)) in groups)
+                {
+                    var signingDetails = new ESRPClientExeSigningDetails(certName);
+                    foreach (var (node, _) in groupFiles)
+                    {
+                        node.SigningDetails = signingDetails;
+                    }
+                }
+
                 return true;
             }
             finally
@@ -131,35 +120,30 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             }
         }
 
-        // ────────────────────────────────────────────────────────────────────────
-        //  File grouping
-        // ────────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Groups files by their certificate identifier's friendly name.
-        /// </summary>
-        internal static Dictionary<string, (ESRPCertificateIdentifier cert, List<(FileNode node, string outputPath)> files)>
-            GroupFilesByCertificate(IReadOnlyList<(FileNode node, string outputPath)> files)
+        protected override void LogDryRun(
+            Dictionary<string, (ESRPCertificateIdentifier cert, List<(FileNode node, string outputPath)> files)> groups)
         {
-            var groups = new Dictionary<string, (ESRPCertificateIdentifier cert, List<(FileNode node, string outputPath)> files)>(
-                StringComparer.OrdinalIgnoreCase);
+            Logger.LogInformation("=== ESRPClient.exe Dry Run ({Count} certificate group(s)) ===", groups.Count);
 
-            foreach (var entry in files)
+            var submissionJson = BuildSubmissionJson(groups);
+            Logger.LogInformation("Submission JSON:\n{Json}", submissionJson);
+
+            var configJson = BuildConfigJson();
+            Logger.LogInformation("Config JSON: {Json}", configJson);
+
+            var policyJson = BuildPolicyJson();
+            Logger.LogInformation("Policy JSON: {Json}", policyJson);
+
+            foreach (var (certName, (_, groupFiles)) in groups)
             {
-                var certId = entry.node.CertificateIdentifier as ESRPCertificateIdentifier
-                    ?? throw new InvalidOperationException(
-                        $"File '{entry.node.Location.FilePathOnDisk}' does not have an ESRPCertificateIdentifier.");
-
-                if (!groups.TryGetValue(certId.FriendlyName, out var group))
+                Logger.LogInformation("  Certificate '{Cert}': {Count} file(s)", certName, groupFiles.Count);
+                foreach (var (node, _) in groupFiles)
                 {
-                    group = (certId, new List<(FileNode, string)>());
-                    groups[certId.FriendlyName] = group;
+                    Logger.LogInformation("    {File}", node.Location.FilePathOnDisk);
                 }
-
-                group.files.Add(entry);
             }
 
-            return groups;
+            Logger.LogInformation("=== End Dry Run ===");
         }
 
         // ────────────────────────────────────────────────────────────────────────
@@ -176,7 +160,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
             foreach (var (certName, (cert, groupFiles)) in groups)
             {
-                var operations = ESRPCliSigningProvider.ExtractOperations(cert.CertificateDefinition);
+                var operations = ExtractOperations(cert.CertificateDefinition);
 
                 var signRequestFiles = groupFiles.Select(f => new
                 {
@@ -207,7 +191,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 SignBatches = signBatches,
             };
 
-            return JsonSerializer.Serialize(submission, s_prettyJsonOptions);
+            return JsonSerializer.Serialize(submission, PrettyJsonOptions);
         }
 
         // ────────────────────────────────────────────────────────────────────────
@@ -247,14 +231,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                         SendX5c = false,
                     },
                 };
-                return JsonSerializer.Serialize(auth, s_compactJsonOptions);
+                return JsonSerializer.Serialize(auth, CompactJsonOptions);
             }
 
             // Check ESRP_AUTH_CONFIG environment variable
             var envAuthConfig = Environment.GetEnvironmentVariable(AuthConfigEnvVar);
             if (!string.IsNullOrEmpty(envAuthConfig))
             {
-                _logger.LogInformation("Using auth configuration from {EnvVar} environment variable", AuthConfigEnvVar);
+                Logger.LogInformation("Using auth configuration from {EnvVar} environment variable", AuthConfigEnvVar);
                 return envAuthConfig;
             }
 
@@ -279,7 +263,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 EsrpSessionTimeoutInSec = (_configuration.TimeoutInMinutes - 5) * 60,
                 MaxDegreeOfParallelism = _configuration.MaxDegreeOfParallelism,
             };
-            return JsonSerializer.Serialize(config, s_compactJsonOptions);
+            return JsonSerializer.Serialize(config, CompactJsonOptions);
         }
 
         /// <summary>
@@ -287,7 +271,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// </summary>
         internal static string BuildPolicyJson()
         {
-            return JsonSerializer.Serialize(new { Version = "1.0.0" }, s_compactJsonOptions);
+            return JsonSerializer.Serialize(new { Version = "1.0.0" }, CompactJsonOptions);
         }
 
         // ────────────────────────────────────────────────────────────────────────
@@ -424,46 +408,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         }
 
         // ────────────────────────────────────────────────────────────────────────
-        //  Logging helpers
+        //  Auth redaction
         // ────────────────────────────────────────────────────────────────────────
-
-        private void LogVerbose(string message, params object[] args)
-        {
-            if (_configuration.VerboseLogging)
-            {
-                _logger.LogInformation(message, args);
-            }
-            else
-            {
-                _logger.LogDebug(message, args);
-            }
-        }
-
-        private void LogDryRun(
-            Dictionary<string, (ESRPCertificateIdentifier cert, List<(FileNode node, string outputPath)> files)> groups)
-        {
-            _logger.LogInformation("=== ESRPClient.exe Dry Run ({Count} certificate group(s)) ===", groups.Count);
-
-            var submissionJson = BuildSubmissionJson(groups);
-            _logger.LogInformation("Submission JSON:\n{Json}", submissionJson);
-
-            var configJson = BuildConfigJson();
-            _logger.LogInformation("Config JSON: {Json}", configJson);
-
-            var policyJson = BuildPolicyJson();
-            _logger.LogInformation("Policy JSON: {Json}", policyJson);
-
-            foreach (var (certName, (_, groupFiles)) in groups)
-            {
-                _logger.LogInformation("  Certificate '{Cert}': {Count} file(s)", certName, groupFiles.Count);
-                foreach (var (node, _) in groupFiles)
-                {
-                    _logger.LogInformation("    {File}", node.Location.FilePathOnDisk);
-                }
-            }
-
-            _logger.LogInformation("=== End Dry Run ===");
-        }
 
         private static string RedactAuthArguments(string arguments)
         {
@@ -474,52 +420,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             if (endIdx < 0) endIdx = arguments.Length;
 
             return arguments[..(idx + 4)] + "[REDACTED]" + arguments[endIdx..];
-        }
-
-        private void WriteInvocationLog(ProcessResult result, string arguments)
-        {
-            var logDir = _configuration.LogDirectory;
-            if (string.IsNullOrWhiteSpace(logDir))
-            {
-                return;
-            }
-
-            try
-            {
-                Directory.CreateDirectory(logDir);
-                var timestamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-                var logFile = Path.Combine(logDir, $"esrpclient-{timestamp}.log");
-
-                var sb = new StringBuilder();
-                sb.AppendLine("=== ESRPClient.exe Invocation ===");
-                sb.AppendLine($"Timestamp (UTC): {DateTime.UtcNow:O}");
-                sb.AppendLine($"Exit code: {result.ExitCode}");
-                sb.AppendLine($"Arguments (redacted): {RedactAuthArguments(arguments)}");
-                sb.AppendLine();
-                sb.AppendLine("=== stdout ===");
-                sb.AppendLine(result.StandardOutput);
-                if (!string.IsNullOrWhiteSpace(result.StandardError))
-                {
-                    sb.AppendLine("=== stderr ===");
-                    sb.AppendLine(result.StandardError);
-                }
-
-                File.WriteAllText(logFile, sb.ToString());
-                _logger.LogInformation("ESRPClient.exe log written to: {LogFile}", logFile);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning("Failed to write ESRPClient.exe invocation log: {Error}", ex.Message);
-            }
-        }
-
-        private void TryDeleteDirectory(string path)
-        {
-            try { Directory.Delete(path, true); }
-            catch (Exception ex)
-            {
-                _logger.LogWarning("Failed to delete working directory {Path}: {Error}", path, ex.Message);
-            }
         }
     }
 }

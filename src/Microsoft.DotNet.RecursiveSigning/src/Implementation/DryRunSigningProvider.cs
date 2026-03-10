@@ -38,6 +38,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 }
 
                 await File.AppendAllTextAsync(outputPath, $"\n[DRY-RUN SIGNED with {node.CertificateIdentifier?.Name}]", cancellationToken);
+
+                node.SigningDetails = new DryRunSigningDetails();
             }
 
             return true;

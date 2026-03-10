@@ -43,6 +43,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
 
         public virtual FileNodeState State { get; protected set; }
 
+        /// <summary>
+        /// Provider-specific signing operation details, set after the node is signed.
+        /// </summary>
+        public ISigningOperationDetails? SigningDetails { get; set; }
+
         internal virtual void AttachToGraph(FileNodeGraph graph) => throw new NotSupportedException();
 
         internal virtual void InitializeState(FileNodeState initialState) => throw new NotSupportedException();

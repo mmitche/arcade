@@ -3,6 +3,8 @@
 
 #nullable enable
 
+using System.Collections.Generic;
+
 namespace Microsoft.DotNet.RecursiveSigning.Models
 {
     /// <summary>
@@ -21,5 +23,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         /// Microsoft signature on top of a third-party signature).
         /// </summary>
         bool AlwaysSign { get; }
+
+        /// <summary>
+        /// Returns a dictionary of certificate details for serialization into a signing report.
+        /// </summary>
+        IDictionary<string, object?> SerializeDetails();
     }
 }

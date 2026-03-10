@@ -4,6 +4,7 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 
 namespace Microsoft.DotNet.RecursiveSigning.Models
@@ -25,6 +26,16 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
             FriendlyName = friendlyName ?? throw new ArgumentNullException(nameof(friendlyName));
             CertificateDefinition = certificateDefinition.Clone();
             AlwaysSign = alwaysSign;
+        }
+
+        public IDictionary<string, object?> SerializeDetails()
+        {
+            return new Dictionary<string, object?>
+            {
+                ["friendlyName"] = FriendlyName,
+                ["alwaysSign"] = AlwaysSign,
+                ["operations"] = CertificateDefinition,
+            };
         }
     }
 }
