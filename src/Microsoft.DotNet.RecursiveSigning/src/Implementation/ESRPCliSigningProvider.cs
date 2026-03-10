@@ -73,17 +73,20 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
             try
             {
-                var rootDir = ComputeCommonRoot(
-                    groupFiles.Select(f => NormalizePath(f.node.Location.FilePathOnDisk!)));
+                var rootDir = RootInputOutputPathHelper.GetCommonRootForFiles(
+                    groupFiles.Select(f => f.node.Location.FilePathOnDisk!).ToList());
+
+                // ESRP CLI expects forward-slash paths
+                var normalizedRoot = NormalizePath(rootDir);
 
                 // Write the operations JSON and pattern file for this cert group
                 var operationsJson = BuildOperationsJson(cert);
                 File.WriteAllText(Path.Combine(workDir, "inlineOperations.json"), operationsJson);
 
-                var patternContent = BuildPatternFileContent(groupFiles, rootDir);
+                var patternContent = BuildPatternFileContent(groupFiles, normalizedRoot);
                 File.WriteAllText(Path.Combine(workDir, "pattern.txt"), patternContent);
 
-                var arguments = BuildArguments(workDir, rootDir);
+                var arguments = BuildArguments(workDir, normalizedRoot);
 
                 Logger.LogInformation("Signing {Count} file(s) with certificate '{Cert}'",
                     groupFiles.Count, certName);
@@ -311,30 +314,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         // ────────────────────────────────────────────────────────────────────────
         //  Path utilities
         // ────────────────────────────────────────────────────────────────────────
-
-        internal static string ComputeCommonRoot(IEnumerable<string> normalizedPaths)
-        {
-            string? common = null;
-            foreach (var path in normalizedPaths)
-            {
-                var dir = path[..path.LastIndexOf('/')];
-                if (common == null)
-                {
-                    common = dir;
-                    continue;
-                }
-
-                while (!dir.StartsWith(common + "/", StringComparison.OrdinalIgnoreCase) &&
-                       !dir.Equals(common, StringComparison.OrdinalIgnoreCase))
-                {
-                    var lastSlash = common.LastIndexOf('/');
-                    common = lastSlash >= 0 ? common[..lastSlash] : common;
-                    if (common.Length <= 1) break;
-                }
-            }
-
-            return common ?? string.Empty;
-        }
 
         private static string GetRelativePath(string filePath, string rootDir)
         {

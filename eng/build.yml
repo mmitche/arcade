@@ -64,7 +64,7 @@ stages:
         - template: /eng/pipelines/templates/steps/recursive-sign.yml@self
           parameters:
             configPath: 'src/Microsoft.DotNet.RecursiveSigning.Cli/signing-config.json'
-            inputs: '$(System.DefaultWorkingDirectory)/artifacts/packages/*.nupkg'
+            inputs: '$(System.DefaultWorkingDirectory)/artifacts/packages/**/Microsoft.DotNet.RecursiveSigning.*.nupkg'
             provider: 'esrp-client'
             esrpId: 'dec434ad-6bd4-4a20-b400-4bf6db7fc3fb'
             esrpClientId: 'c4428c30-2253-4654-ab5e-cdb9ff6d850c'

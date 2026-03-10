@@ -27,6 +27,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         public IReadOnlyList<SigningError> Errors { get; }
 
         /// <summary>
+        /// Tracks each root input file with its output location and whether it was updated.
+        /// </summary>
+        public IReadOnlyList<FileResult> FileResults { get; }
+
+        /// <summary>
         /// Telemetry about the signing process.
         /// </summary>
         public SigningTelemetry Telemetry { get; }
@@ -35,12 +40,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
             bool success,
             IReadOnlyList<SignedFileInfo> signedFiles,
             IReadOnlyList<SigningError> errors,
-            SigningTelemetry telemetry)
+            SigningTelemetry telemetry,
+            IReadOnlyList<FileResult> fileResults = null)
         {
             Success = success;
             SignedFiles = signedFiles ?? throw new ArgumentNullException(nameof(signedFiles));
             Errors = errors ?? throw new ArgumentNullException(nameof(errors));
             Telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
+            FileResults = fileResults ?? Array.Empty<FileResult>();
         }
     }
 
@@ -58,6 +65,35 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
             FilePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
             Certificate = certificate ?? throw new ArgumentNullException(nameof(certificate));
             WasAlreadySigned = wasAlreadySigned;
+        }
+    }
+
+    /// <summary>
+    /// Tracks the input-to-output mapping and update status for a single root input file.
+    /// </summary>
+    public sealed class FileResult
+    {
+        /// <summary>
+        /// Original input file path as provided to the signing request.
+        /// </summary>
+        public string InputPath { get; }
+
+        /// <summary>
+        /// Output file path (same as input when no output directory is configured,
+        /// otherwise the relocated path under the output directory).
+        /// </summary>
+        public string OutputPath { get; }
+
+        /// <summary>
+        /// Whether the file was modified during signing (signed, repacked, or had its content updated).
+        /// </summary>
+        public bool WasUpdated { get; }
+
+        public FileResult(string inputPath, string outputPath, bool wasUpdated)
+        {
+            InputPath = inputPath ?? throw new ArgumentNullException(nameof(inputPath));
+            OutputPath = outputPath ?? throw new ArgumentNullException(nameof(outputPath));
+            WasUpdated = wasUpdated;
         }
     }
 

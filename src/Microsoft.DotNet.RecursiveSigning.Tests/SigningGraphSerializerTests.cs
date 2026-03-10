@@ -69,7 +69,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             // Signing details present
             var details = fileEntry.GetProperty("signingDetails");
-            Assert.Equal("DryRun", details.GetProperty("providerName").GetString());
+            Assert.Equal("Dry Run", details.GetProperty("providerName").GetString());
 
             // Certificate in certificates section
             var certs = doc.RootElement.GetProperty("certificates");
@@ -234,7 +234,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var details = doc.RootElement.GetProperty("files")[0].GetProperty("signingDetails");
             Assert.Equal("ESRP CLI", details.GetProperty("providerName").GetString());
-            Assert.Equal("TestCert", details.GetProperty("certificateName").GetString());
+            Assert.Equal("TestCert", details.GetProperty("certificateGroup").GetString());
             Assert.Equal(opId.ToString(), details.GetProperty("operationId").GetString());
         }
 
@@ -255,7 +255,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var details = doc.RootElement.GetProperty("files")[0].GetProperty("signingDetails");
             Assert.Equal("ESRPClient.exe", details.GetProperty("providerName").GetString());
-            Assert.Equal("TestCert", details.GetProperty("certificateName").GetString());
+            Assert.Equal("TestCert", details.GetProperty("certificateGroup").GetString());
         }
 
         [Fact]

@@ -840,6 +840,172 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             return filePath;
         }
 
+        // ─── FileResult tracking tests ───
+
+        [Fact]
+        public async Task FileResults_SingleSignedFile_ShowsUpdated()
+        {
+            // Arrange
+            var testFile = CreateTestFile("signed.txt", "content");
+            var orchestrator = _serviceProvider.GetRequiredService<IRecursiveSigning>();
+
+            var request = new SigningRequest(
+                new[] { new FileInfo(testFile) },
+                new SigningConfiguration(_workingDir),
+                new SigningOptions());
+
+            // Act
+            var result = await orchestrator.SignAsync(request);
+
+            // Assert
+            result.Success.Should().BeTrue();
+            result.FileResults.Should().HaveCount(1);
+            var fr = result.FileResults[0];
+            fr.InputPath.Should().Be(testFile);
+            fr.OutputPath.Should().Be(testFile); // No output dir → same path
+            fr.WasUpdated.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task FileResults_FileWithNoCertificate_ShowsNotUpdated()
+        {
+            // Arrange – return null cert for this file so it gets skipped
+            _mockSignatureCalculator.Reset();
+            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(
+                It.IsAny<IFileMetadata>(),
+                It.IsAny<SigningConfiguration>()))
+                .Returns((ICertificateIdentifier?)null);
+
+            var testFile = CreateTestFile("no-cert.txt", "content");
+            var orchestrator = _serviceProvider.GetRequiredService<IRecursiveSigning>();
+
+            var request = new SigningRequest(
+                new[] { new FileInfo(testFile) },
+                new SigningConfiguration(_workingDir),
+                new SigningOptions());
+
+            // Act
+            var result = await orchestrator.SignAsync(request);
+
+            // Assert
+            result.Success.Should().BeTrue();
+            result.FileResults.Should().HaveCount(1);
+            var fr = result.FileResults[0];
+            fr.InputPath.Should().Be(testFile);
+            fr.OutputPath.Should().Be(testFile);
+            fr.WasUpdated.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task FileResults_MixedFiles_TracksEachCorrectly()
+        {
+            // Arrange – first file gets signed, second file is already signed so gets skipped
+            var signedFile = CreateTestFile("to-sign.txt", "signable-content");
+            var skippedFile = CreateTestFile("no-sign.txt", "skip-content");
+
+            _mockSignatureCalculator.Reset();
+            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(
+                It.IsAny<IFileMetadata>(),
+                It.IsAny<SigningConfiguration>()))
+                .Returns(Mock.Of<ICertificateIdentifier>(ci => ci.Name == "TestCert"));
+
+            // Override: make the second file already signed so it gets skipped
+            _mockFileAnalyzer.Reset();
+            _mockFileAnalyzer.Setup(a => a.AnalyzeAsync(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync((string path, System.Threading.CancellationToken ct) =>
+                {
+                    bool isAlreadySigned = path == skippedFile;
+                    return (IFileMetadata)new FileMetadata(
+                        Path.GetFileName(path),
+                        executableType: ExecutableType.None,
+                        isAlreadySigned: isAlreadySigned);
+                });
+
+            var orchestrator = _serviceProvider.GetRequiredService<IRecursiveSigning>();
+
+            var request = new SigningRequest(
+                new[] { new FileInfo(signedFile), new FileInfo(skippedFile) },
+                new SigningConfiguration(_workingDir),
+                new SigningOptions());
+
+            // Act
+            var result = await orchestrator.SignAsync(request);
+
+            // Assert
+            result.Success.Should().BeTrue();
+            result.FileResults.Should().HaveCount(2);
+
+            var signedResult = result.FileResults.First(f => f.InputPath == signedFile);
+            signedResult.WasUpdated.Should().BeTrue();
+            signedResult.OutputPath.Should().Be(signedFile);
+
+            var skippedResult = result.FileResults.First(f => f.InputPath == skippedFile);
+            skippedResult.WasUpdated.Should().BeFalse();
+            skippedResult.OutputPath.Should().Be(skippedFile);
+        }
+
+        [Fact]
+        public async Task FileResults_WithOutputDirectory_TracksInputAndOutputPaths()
+        {
+            // Arrange
+            var inputDir = _mockFileSystem.PathCombine(_workingDir, "input");
+            var outputDir = _mockFileSystem.PathCombine(_workingDir, "output");
+            _mockFileSystem.CreateDirectory(inputDir);
+            _mockFileSystem.CreateDirectory(outputDir);
+
+            var inputFile = _mockFileSystem.PathCombine(inputDir, "payload.txt");
+            _mockFileSystem.WriteToFile(inputFile, "payload-content");
+
+            var orchestrator = _serviceProvider.GetRequiredService<IRecursiveSigning>();
+
+            var request = new SigningRequest(
+                new[] { new FileInfo(inputFile) },
+                new SigningConfiguration(_workingDir, outputDir),
+                new SigningOptions());
+
+            // Act
+            var result = await orchestrator.SignAsync(request);
+
+            // Assert
+            result.Success.Should().BeTrue();
+            result.FileResults.Should().HaveCount(1);
+            var fr = result.FileResults[0];
+            fr.InputPath.Should().Be(inputFile);
+            fr.OutputPath.Should().NotBe(inputFile);
+            fr.OutputPath.Should().StartWith(outputDir);
+            fr.WasUpdated.Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task FileResults_MultipleFilesNoneUpdated_AllShowNotUpdated()
+        {
+            // Arrange – no certs assigned
+            _mockSignatureCalculator.Reset();
+            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(
+                It.IsAny<IFileMetadata>(),
+                It.IsAny<SigningConfiguration>()))
+                .Returns((ICertificateIdentifier?)null);
+
+            var file1 = CreateTestFile("a.txt", "aaa");
+            var file2 = CreateTestFile("b.txt", "bbb");
+            var file3 = CreateTestFile("c.txt", "ccc");
+
+            var orchestrator = _serviceProvider.GetRequiredService<IRecursiveSigning>();
+
+            var request = new SigningRequest(
+                new[] { new FileInfo(file1), new FileInfo(file2), new FileInfo(file3) },
+                new SigningConfiguration(_workingDir),
+                new SigningOptions());
+
+            // Act
+            var result = await orchestrator.SignAsync(request);
+
+            // Assert
+            result.Success.Should().BeTrue();
+            result.FileResults.Should().HaveCount(3);
+            result.FileResults.Should().OnlyContain(fr => !fr.WasUpdated);
+        }
+
         public void Dispose()
         {
             _serviceProvider?.Dispose();

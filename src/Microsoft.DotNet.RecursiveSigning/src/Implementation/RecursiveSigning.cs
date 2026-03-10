@@ -66,6 +66,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             var effectiveInputFiles = ResolveRootInputs(request.InputFiles, request.Configuration.OutputDirectory);
             var effectiveRequest = new SigningRequest(effectiveInputFiles, request.Configuration, request.Options);
 
+            // Build the input→output mapping for FileResults tracking.
+            // The two lists are parallel: request.InputFiles[i] maps to effectiveInputFiles[i].
+            var inputOutputMapping = new List<(string originalPath, string effectivePath)>(request.InputFiles.Count);
+            for (int i = 0; i < request.InputFiles.Count; i++)
+            {
+                inputOutputMapping.Add((request.InputFiles[i].ToString(), effectiveInputFiles[i].ToString()));
+            }
+
             try
             {
                 _logger.LogInformation("Starting recursive signing for {FileCount} input files", effectiveRequest.InputFiles.Count);
@@ -82,7 +90,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 {
                     _logger.LogError("Discovery phase failed with {ErrorCount} errors", errors.Count);
                     return CreateResult(false, signedFiles, errors, sw.Elapsed, 0, 0,
-                        discoverySw.Elapsed, TimeSpan.Zero, TimeSpan.Zero, new List<SigningRoundTelemetry>(), 0);
+                        discoverySw.Elapsed, TimeSpan.Zero, TimeSpan.Zero, new List<SigningRoundTelemetry>(), 0,
+                        BuildFileResults(inputOutputMapping));
                 }
 
                 var allNodes = _signingGraph.GetAllNodes();
@@ -116,7 +125,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 {
                     _logger.LogError("Signing phase failed with {ErrorCount} errors", errors.Count);
                     return CreateResult(false, signedFiles, errors, sw.Elapsed, 0, allNodes.Count,
-                        discoverySw.Elapsed, signingSw.Elapsed, TimeSpan.Zero, roundTelemetry, duplicateCount);
+                        discoverySw.Elapsed, signingSw.Elapsed, TimeSpan.Zero, roundTelemetry, duplicateCount,
+                        BuildFileResults(inputOutputMapping));
                 }
 
                 // Phase 3: Finalization
@@ -132,7 +142,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     sw.ElapsedMilliseconds, success, signedFiles.Count, allNodes.Count);
 
                 return CreateResult(success, signedFiles, errors, sw.Elapsed, signedFiles.Count, allNodes.Count,
-                    discoverySw.Elapsed, signingSw.Elapsed, finalizationSw.Elapsed, roundTelemetry, duplicateCount);
+                    discoverySw.Elapsed, signingSw.Elapsed, finalizationSw.Elapsed, roundTelemetry, duplicateCount,
+                    BuildFileResults(inputOutputMapping));
             }
             catch (OperationCanceledException)
             {
@@ -144,7 +155,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 _logger.LogError(ex, "Unexpected error during signing");
                 errors.Add(new SigningError($"Unexpected error: {ex.Message}", exception: ex));
                 return CreateResult(false, signedFiles, errors, sw.Elapsed, 0, 0,
-                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, new List<SigningRoundTelemetry>(), 0);
+                    TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, new List<SigningRoundTelemetry>(), 0,
+                    BuildFileResults(inputOutputMapping));
             }
         }
 
@@ -788,7 +800,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             TimeSpan signingDuration,
             TimeSpan finalizationDuration,
             List<SigningRoundTelemetry> rounds,
-            int duplicateFiles)
+            int duplicateFiles,
+            List<FileResult>? fileResults = null)
         {
             var telemetry = new SigningTelemetry
             {
@@ -804,7 +817,49 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 Rounds = rounds,
             };
 
-            return new SigningResult(success, signedFiles, errors, telemetry);
+            return new SigningResult(success, signedFiles, errors, telemetry, fileResults);
+        }
+
+        /// <summary>
+        /// Builds file result entries mapping each original input to its effective output path
+        /// and whether the file was updated (signed or repacked) during the workflow.
+        /// </summary>
+        private List<FileResult> BuildFileResults(List<(string originalPath, string effectivePath)> inputOutputMapping)
+        {
+            var allNodes = _signingGraph.GetAllNodes();
+
+            // Index root-level nodes (no parent) by their on-disk path for fast lookup.
+            var rootNodesByPath = new Dictionary<string, FileNodeBase>(StringComparer.OrdinalIgnoreCase);
+            foreach (var node in allNodes)
+            {
+                if (node.Parent == null && node.Location.FilePathOnDisk != null)
+                {
+                    rootNodesByPath[node.Location.FilePathOnDisk] = node;
+                }
+            }
+
+            var results = new List<FileResult>(inputOutputMapping.Count);
+            foreach (var (originalPath, effectivePath) in inputOutputMapping)
+            {
+                bool wasUpdated = false;
+                if (rootNodesByPath.TryGetValue(effectivePath, out var node))
+                {
+                    // A node is "updated" if it reached Complete state (was signed or repacked+signed).
+                    // ReferenceNodes that resolved to a signed canonical are also considered updated.
+                    if (node is FileNode fileNode)
+                    {
+                        wasUpdated = fileNode.State == FileNodeState.Complete;
+                    }
+                    else if (node is ReferenceNode refNode)
+                    {
+                        wasUpdated = refNode.CanonicalNode.State == FileNodeState.Complete;
+                    }
+                }
+
+                results.Add(new FileResult(originalPath, effectivePath, wasUpdated));
+            }
+
+            return results;
         }
     }
 }
