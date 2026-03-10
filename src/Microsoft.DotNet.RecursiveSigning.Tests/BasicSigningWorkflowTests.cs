@@ -9,8 +9,6 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using AwesomeAssertions;
-using Microsoft.Arcade.Common;
-using Microsoft.Arcade.Test.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.DotNet.RecursiveSigning.Abstractions;

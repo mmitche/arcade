@@ -13,7 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Microsoft.DotNet.RecursiveSigning\Microsoft.DotNet.RecursiveSigning.csproj" />
-    <ProjectReference Include="..\..\src\Common\Microsoft.Arcade.Test.Common\Microsoft.Arcade.Test.Common.csproj" />
     <ProjectReference Include="..\..\src\Microsoft.DotNet.XUnitExtensions\src\Microsoft.DotNet.XUnitExtensions.csproj" />
   </ItemGroup>
 

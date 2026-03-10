@@ -10,8 +10,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AwesomeAssertions;
-using Microsoft.Arcade.Common;
-using Microsoft.Arcade.Test.Common;
 using Microsoft.DotNet.RecursiveSigning.Abstractions;
 using Microsoft.DotNet.RecursiveSigning.Configuration;
 using Microsoft.DotNet.RecursiveSigning.Implementation;

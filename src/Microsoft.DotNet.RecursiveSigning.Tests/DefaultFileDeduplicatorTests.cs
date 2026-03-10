@@ -6,7 +6,6 @@
 using System;
 using System.Collections.Immutable;
 using AwesomeAssertions;
-using Microsoft.Arcade.Test.Common;
 using Microsoft.DotNet.RecursiveSigning.Implementation;
 using Microsoft.DotNet.RecursiveSigning.Models;
 using Xunit;
@@ -33,9 +32,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var sut = new DefaultFileDeduplicator();
             var key = CreateKey("a.dll");
 
-            AssertEx.ThrowsArgumentException(
-                "filePathOnDisk",
+            var ex = Assert.Throws<ArgumentException>(
                 () => sut.RegisterFile(key, filePathOnDisk: ""));
+            Assert.Equal("filePathOnDisk", ex.ParamName);
         }
 
         [Fact]
@@ -95,9 +94,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var sut = new DefaultFileDeduplicator();
             var key = CreateKey("a.dll");
 
-            AssertEx.ThrowsArgumentException(
-                "signedPath",
+            var ex = Assert.Throws<ArgumentException>(
                 () => sut.RegisterSignedFile(key, signedPath: " "));
+            Assert.Equal("signedPath", ex.ParamName);
         }
 
         [Fact]

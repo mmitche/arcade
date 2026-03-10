@@ -70,7 +70,7 @@ stages:
             esrpClientId: 'c4428c30-2253-4654-ab5e-cdb9ff6d850c'
             displayNameSuffix: ' (ESRPClient.exe)'
 
-        - script: |
+        - powershell: |
             ./eng/common/dotnet.ps1 nuget push "$(System.DefaultWorkingDirectory)/artifacts/packages/Microsoft.DotNet.RecursiveSigning.*.nupkg" --source https://pkgs.dev.azure.com/dnceng/internal/_packaging/dotnet-sign-test-feed/nuget/v3/index.json --api-key az
 
 - stage: ValidateSdk

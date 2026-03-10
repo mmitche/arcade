@@ -12,8 +12,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using AwesomeAssertions;
-using Microsoft.Arcade.Common;
-using Microsoft.Arcade.Test.Common;
 using Microsoft.DotNet.RecursiveSigning.Implementation;
 using Microsoft.DotNet.RecursiveSigning.Models;
 using Xunit;
