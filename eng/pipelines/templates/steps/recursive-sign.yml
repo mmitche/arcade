@@ -102,13 +102,13 @@ steps:
           TenantId = "${{ parameters.esrpTenantId }}"
           AuthenticationType = "AAD_CERT"
           AuthCert = @{
-            SubjectName = "${{ parameters.esrpClientId }}.microsoft.com"
+            SubjectName = "CN=${{ parameters.esrpClientId }}.microsoft.com"
             StoreLocation = "LocalMachine"
             StoreName = "My"
             SendX5c = $true
           }
           RequestSigningCert = @{
-            SubjectName = "${{ parameters.esrpId }}"
+            SubjectName = "CN=${{ parameters.esrpId }}"
             StoreLocation = "LocalMachine"
             StoreName = "My"
             SendX5c = $false

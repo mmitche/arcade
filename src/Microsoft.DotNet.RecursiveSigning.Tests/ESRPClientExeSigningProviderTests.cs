@@ -162,9 +162,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             authJson.Should().NotBeNull();
             var doc = JsonDocument.Parse(authJson!);
-            doc.RootElement.GetProperty("AuthCert").GetProperty("SubjectName").GetString().Should().Be("test-client-id.microsoft.com");
+            doc.RootElement.GetProperty("AuthCert").GetProperty("SubjectName").GetString().Should().Be("CN=test-client-id.microsoft.com");
             doc.RootElement.GetProperty("AuthCert").GetProperty("SendX5c").GetBoolean().Should().BeTrue();
-            doc.RootElement.GetProperty("RequestSigningCert").GetProperty("SubjectName").GetString().Should().Be("test-esrp-client-id");
+            doc.RootElement.GetProperty("RequestSigningCert").GetProperty("SubjectName").GetString().Should().Be("CN=test-esrp-client-id");
             doc.RootElement.GetProperty("RequestSigningCert").GetProperty("SendX5c").GetBoolean().Should().BeFalse();
         }
 
