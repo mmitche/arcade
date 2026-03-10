@@ -101,7 +101,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 {
                     if (node.State == FileNodeState.Skipped && node.CertificateIdentifier != null && node.Metadata.IsAlreadySigned)
                     {
-                        _logger.LogInformation("Skipping '{FileName}': already signed (certificate '{CertName}')",
+                        _logger.LogInformation("Skipping '{FileName}': already signed (would use certificate '{CertName}' if unsigned)",
                             node.ContentKey.FileName, node.CertificateIdentifier.Name);
                     }
                     else if (node.Metadata.IsAlreadySigned && node.CertificateIdentifier?.AlwaysSign == true)
@@ -428,8 +428,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
             // Node state is graph-owned and computed when the graph is built.
 
-            _logger.LogDebug("Discovered file: {FileName} [{ContentHash}], NeedsSigning: {NeedsSigning}, IsContainer: {IsContainer}",
-                contentKey.FileName, ShortHash(contentKey.ContentHash), node.NeedsSigning, isContainer);
+            _logger.LogDebug("Discovered file: {FileName} [{ContentHash}], IsAlreadySigned: {IsAlreadySigned}, Certificate: {Certificate}, IsContainer: {IsContainer}",
+                contentKey.FileName, ShortHash(contentKey.ContentHash), metadata.IsAlreadySigned, certificateIdentifier?.Name ?? "<none>", isContainer);
 
             // If this is a container (has a registered handler), recursively discover its contents
             if (isContainer)
@@ -685,8 +685,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         private void FinalizationPhase(List<SignedFileInfo> signedFiles, List<SigningError> errors)
         {
             // Phase 3 tasks:
-            // - Verify all required files are signed
-            // - Copy files to final output locations (if needed)
             // - Generate report
 
             var allNodes = _signingGraph.GetAllNodes();

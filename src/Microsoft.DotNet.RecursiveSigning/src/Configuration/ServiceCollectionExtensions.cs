@@ -33,6 +33,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
             services.AddSingleton<IRecursiveSigning, Implementation.RecursiveSigning>();
             services.AddSingleton<ISigningGraph, SigningGraph>();
             services.AddSingleton<IFileDeduplicator, DefaultFileDeduplicator>();
+
+            // Built-in file type analyzers (used by DefaultFileAnalyzer to detect
+            // Authenticode signatures, PE metadata, etc.)
+            services.AddSingleton<IFileTypeAnalyzer, PEFileTypeAnalyzer>();
             services.AddSingleton<IContainerHandlerRegistry>(sp =>
             {
                 var registry = new ContainerHandlerRegistry();

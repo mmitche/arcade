@@ -105,11 +105,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         public override ICertificateIdentifier? CertificateIdentifier { get; protected init; }
 
         /// <summary>
-        /// Whether this node requires signing.
-        /// </summary>
-        public bool NeedsSigning => State is not (FileNodeState.Complete or FileNodeState.Skipped or FileNodeState.PendingRepack or FileNodeState.ReadyToRepack);
-
-        /// <summary>
         /// Current state of this node in the signing process.
         /// </summary>
         public override FileNodeState State { get; protected set; }

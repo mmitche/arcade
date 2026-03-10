@@ -6,11 +6,9 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using Microsoft.DotNet.RecursiveSigning.Abstractions;
 using Microsoft.DotNet.RecursiveSigning.Models;
-using NuGet.Packaging.Signing;
 
 namespace Microsoft.DotNet.RecursiveSigning.Implementation
 {
