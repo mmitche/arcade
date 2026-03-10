@@ -60,11 +60,14 @@ stages:
         # Non-dry-run real signing test using ESRPClient.exe provider.
         # Uses EsrpClient.exe from MicroBuild signing plugin (auto-discovered).
         # Uses the RecursiveSigning library DLL (different file, not yet signed).
+        # Note: ESRPClient.exe uses cert-based auth, and MicroBuild installs PME certs.
         - template: /eng/pipelines/templates/steps/recursive-sign.yml@self
           parameters:
             configPath: 'src/Microsoft.DotNet.RecursiveSigning.Cli/signing-config.json'
             inputs: '$(System.DefaultWorkingDirectory)/artifacts/bin/Microsoft.DotNet.RecursiveSigning/$(_BuildConfig)/net10.0/Microsoft.DotNet.RecursiveSigning.dll'
             provider: 'esrp-client'
+            esrpId: 'dec434ad-6bd4-4a20-b400-4bf6db7fc3fb'
+            esrpClientId: 'c4428c30-2253-4654-ab5e-cdb9ff6d850c'
             displayNameSuffix: ' (ESRPClient.exe)'
 
 - stage: ValidateSdk
