@@ -234,14 +234,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     AuthenticationType = "AAD_CERT",
                     AuthCert = new
                     {
-                        SubjectName = $"CN={_configuration.ClientId}.microsoft.com",
+                        SubjectName = $"{_configuration.ClientId}.microsoft.com",
                         StoreLocation = "LocalMachine",
                         StoreName = "My",
                         SendX5c = true,
                     },
                     RequestSigningCert = new
                     {
-                        SubjectName = $"CN={_configuration.EsrpClientId ?? _configuration.ClientId}",
+                        SubjectName = _configuration.EsrpClientId ?? _configuration.ClientId,
                         StoreLocation = "LocalMachine",
                         StoreName = "My",
                         SendX5c = false,

@@ -94,17 +94,70 @@ steps:
         $cliDll = "$(System.DefaultWorkingDirectory)\artifacts\bin\Microsoft.DotNet.RecursiveSigning.Cli\$(_BuildConfig)\net10.0\Microsoft.DotNet.RecursiveSigning.Cli.dll"
         $dotnet = "$(System.DefaultWorkingDirectory)\.dotnet\dotnet.exe"
 
-        # Diagnostic: list certificates installed by MicroBuild in LocalMachine\My
-        Write-Host "=== Certificates in LocalMachine\My ==="
-        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", "LocalMachine")
-        $store.Open("ReadOnly")
-        foreach ($cert in $store.Certificates) {
-          Write-Host "  Subject: $($cert.Subject)  Thumbprint: $($cert.Thumbprint)  NotAfter: $($cert.NotAfter)"
+        # Helper: find a certificate by partial subject name across both stores
+        function Find-CertBySubject($subjectFragment) {
+          foreach ($loc in @("LocalMachine", "CurrentUser")) {
+            $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", $loc)
+            $store.Open("ReadOnly")
+            $found = $store.Certificates | Where-Object { $_.Subject -like "*$subjectFragment*" } | Sort-Object NotAfter -Descending | Select-Object -First 1
+            $store.Close()
+            if ($found) {
+              return @{ Cert = $found; StoreLocation = $loc }
+            }
+          }
+          return $null
         }
-        $store.Close()
-        Write-Host "=== End Certificates ==="
 
-        # Build auth JSON for ESRPClient.exe using certs installed by MicroBuild
+        # Diagnostic: list all certificates in both stores
+        foreach ($loc in @("LocalMachine", "CurrentUser")) {
+          Write-Host "=== Certificates in ${loc}\My ==="
+          $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("My", $loc)
+          $store.Open("ReadOnly")
+          foreach ($cert in $store.Certificates) {
+            Write-Host "  Subject: $($cert.Subject)  Thumbprint: $($cert.Thumbprint)  NotAfter: $($cert.NotAfter)"
+          }
+          $store.Close()
+        }
+        Write-Host "=== End Certificate Listing ==="
+
+        # Find auth cert (SubjectName = "{ClientId}.microsoft.com")
+        $authSubjectFragment = "${{ parameters.esrpClientId }}.microsoft.com"
+        $authCertInfo = Find-CertBySubject $authSubjectFragment
+        if ($authCertInfo) {
+          $authSubjectName = $authSubjectFragment
+          $authStoreLocation = $authCertInfo.StoreLocation
+          Write-Host "Found auth cert in ${authStoreLocation}: $($authCertInfo.Cert.Subject)"
+        } else {
+          # Fallback: try just the client ID
+          $authCertInfo = Find-CertBySubject "${{ parameters.esrpClientId }}"
+          if ($authCertInfo) {
+            # Use the actual subject from the found cert (strip "CN=" prefix if present)
+            $rawSubject = $authCertInfo.Cert.Subject
+            if ($rawSubject -match "CN=([^,]+)") { $authSubjectName = $matches[1] } else { $authSubjectName = $rawSubject }
+            $authStoreLocation = $authCertInfo.StoreLocation
+            Write-Host "Found auth cert (by clientId) in ${authStoreLocation}: $rawSubject -> using SubjectName: $authSubjectName"
+          } else {
+            Write-Host "WARNING: Auth cert not found for $authSubjectFragment — using default"
+            $authSubjectName = "${{ parameters.esrpClientId }}.microsoft.com"
+            $authStoreLocation = "LocalMachine"
+          }
+        }
+
+        # Find request signing cert (SubjectName = "{EsrpClientId}")
+        $reqSubjectFragment = "${{ parameters.esrpId }}"
+        $reqCertInfo = Find-CertBySubject $reqSubjectFragment
+        if ($reqCertInfo) {
+          $rawSubject = $reqCertInfo.Cert.Subject
+          if ($rawSubject -match "CN=([^,]+)") { $reqSubjectName = $matches[1] } else { $reqSubjectName = $rawSubject }
+          $reqStoreLocation = $reqCertInfo.StoreLocation
+          Write-Host "Found request signing cert in ${reqStoreLocation}: $rawSubject -> using SubjectName: $reqSubjectName"
+        } else {
+          Write-Host "WARNING: Request signing cert not found for $reqSubjectFragment — using default"
+          $reqSubjectName = "${{ parameters.esrpId }}"
+          $reqStoreLocation = "LocalMachine"
+        }
+
+        # Build auth JSON for ESRPClient.exe
         $authJson = @{
           Version = "1.0.0"
           ClientId = "${{ parameters.esrpClientId }}"
@@ -112,18 +165,19 @@ steps:
           TenantId = "${{ parameters.esrpTenantId }}"
           AuthenticationType = "AAD_CERT"
           AuthCert = @{
-            SubjectName = "CN=${{ parameters.esrpClientId }}.microsoft.com"
-            StoreLocation = "LocalMachine"
+            SubjectName = $authSubjectName
+            StoreLocation = $authStoreLocation
             StoreName = "My"
             SendX5c = $true
           }
           RequestSigningCert = @{
-            SubjectName = "CN=${{ parameters.esrpId }}"
-            StoreLocation = "LocalMachine"
+            SubjectName = $reqSubjectName
+            StoreLocation = $reqStoreLocation
             StoreName = "My"
             SendX5c = $false
           }
         } | ConvertTo-Json -Compress
+        Write-Host "Auth JSON: $authJson"
         $env:ESRP_AUTH_CONFIG = $authJson
         Write-Host "ESRP_AUTH_CONFIG set (cert-based AAD_CERT auth)"
 
