@@ -59,9 +59,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 var submissionFile = Path.Combine(workDir, "submission.json");
                 File.WriteAllText(submissionFile, submissionJson);
 
-                // Build config and policy JSON
+                // Build config JSON (skipped if ESRP_SESSION_CONFIG env var is set)
                 var configJson = BuildConfigJson();
-                var policyJson = BuildPolicyJson();
 
                 // Build auth JSON (optional - from params or ESRP_AUTH_CONFIG env var)
                 var authJson = BuildAuthJson();
@@ -69,7 +68,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 var outputJsonFile = Path.Combine(workDir, "output.json");
                 var outputTxtFile = Path.Combine(workDir, "output.txt");
 
-                var arguments = BuildArguments(submissionFile, authJson, configJson, policyJson, outputJsonFile, outputTxtFile);
+                var arguments = BuildArguments(submissionFile, authJson, configJson, outputJsonFile, outputTxtFile);
 
                 LogVerbose("ESRPClient.exe submission JSON:\n{Json}", submissionJson);
                 LogVerbose("ESRPClient.exe arguments: {Args}", RedactAuthArguments(arguments));
@@ -129,10 +128,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             Logger.LogInformation("Submission JSON:\n{Json}", submissionJson);
 
             var configJson = BuildConfigJson();
-            Logger.LogInformation("Config JSON: {Json}", configJson);
-
-            var policyJson = BuildPolicyJson();
-            Logger.LogInformation("Policy JSON: {Json}", policyJson);
+            if (configJson != null)
+            {
+                Logger.LogInformation("Config JSON: {Json}", configJson);
+            }
+            else
+            {
+                Logger.LogInformation("Config JSON: (provided via {EnvVar} environment variable)", SessionConfigEnvVar);
+            }
 
             foreach (var (certName, (_, groupFiles)) in groups)
             {
@@ -253,10 +256,25 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         }
 
         /// <summary>
-        /// Builds the ESRP config JSON.
+        /// Environment variable name that ESRPClient.exe reads for session configuration.
+        /// When this is set, the config JSON is not built or passed.
         /// </summary>
-        internal string BuildConfigJson()
+        internal const string SessionConfigEnvVar = "ESRP_SESSION_CONFIG";
+
+        /// <summary>
+        /// Builds the ESRP config JSON.
+        /// Returns null if the <c>ESRP_SESSION_CONFIG</c> environment variable is set,
+        /// since ESRPClient.exe will read configuration from there instead.
+        /// </summary>
+        internal string? BuildConfigJson()
         {
+            var envSessionConfig = Environment.GetEnvironmentVariable(SessionConfigEnvVar);
+            if (!string.IsNullOrEmpty(envSessionConfig))
+            {
+                Logger.LogInformation("Using session configuration from {EnvVar} environment variable", SessionConfigEnvVar);
+                return null;
+            }
+
             var config = new
             {
                 Version = "1.0.0",
@@ -264,14 +282,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 MaxDegreeOfParallelism = _configuration.MaxDegreeOfParallelism,
             };
             return JsonSerializer.Serialize(config, CompactJsonOptions);
-        }
-
-        /// <summary>
-        /// Builds the ESRP policy JSON.
-        /// </summary>
-        internal static string BuildPolicyJson()
-        {
-            return JsonSerializer.Serialize(new { Version = "1.0.0" }, CompactJsonOptions);
         }
 
         // ────────────────────────────────────────────────────────────────────────
@@ -284,8 +294,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         internal string BuildArguments(
             string submissionFile,
             string? authJson,
-            string configJson,
-            string policyJson,
+            string? configJson,
             string outputJsonFile,
             string outputTxtFile)
         {
@@ -297,8 +306,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 sb.Append($" -a {EscapeJsonArg(authJson)}");
             }
 
-            sb.Append($" -c {EscapeJsonArg(configJson)}");
-            sb.Append($" -p {EscapeJsonArg(policyJson)}");
+            if (!string.IsNullOrEmpty(configJson))
+            {
+                sb.Append($" -c {EscapeJsonArg(configJson)}");
+            }
+
             sb.Append($" -o \"{outputJsonFile}\"");
             sb.Append(" -l Verbose");
             sb.Append($" -f \"{outputTxtFile}\"");

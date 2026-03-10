@@ -199,7 +199,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
 
             var json = provider.BuildConfigJson();
-            var doc = JsonDocument.Parse(json);
+            json.Should().NotBeNull();
+            var doc = JsonDocument.Parse(json!);
 
             doc.RootElement.GetProperty("Version").GetString().Should().Be("1.0.0");
             doc.RootElement.GetProperty("EsrpSessionTimeoutInSec").GetInt32().Should().Be(1500); // (30-5)*60
@@ -207,12 +208,22 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         }
 
         [Fact]
-        public void BuildPolicyJson_ContainsVersionOnly()
+        public void BuildConfigJson_ReturnsNull_WhenSessionConfigEnvVarSet()
         {
-            var json = ESRPClientExeSigningProvider.BuildPolicyJson();
-            var doc = JsonDocument.Parse(json);
+            var config = CreateConfig();
+            var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
 
-            doc.RootElement.GetProperty("Version").GetString().Should().Be("1.0.0");
+            var prev = Environment.GetEnvironmentVariable(ESRPClientExeSigningProvider.SessionConfigEnvVar);
+            try
+            {
+                Environment.SetEnvironmentVariable(ESRPClientExeSigningProvider.SessionConfigEnvVar, "{\"Version\":\"1.0.0\"}");
+                var json = provider.BuildConfigJson();
+                json.Should().BeNull();
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(ESRPClientExeSigningProvider.SessionConfigEnvVar, prev);
+            }
         }
 
         [Fact]
@@ -225,7 +236,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 @"C:\temp\submission.json",
                 "{\"Version\":\"1.0.0\"}",
                 "{\"Version\":\"1.0.0\"}",
-                "{\"Version\":\"1.0.0\"}",
                 @"C:\temp\output.json",
                 @"C:\temp\output.txt");
 
@@ -233,7 +243,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             args.Should().Contain("-i");
             args.Should().Contain("-a");
             args.Should().Contain("-c");
-            args.Should().Contain("-p");
             args.Should().Contain("-o");
             args.Should().Contain("-l Verbose");
             args.Should().Contain("-f");
@@ -249,11 +258,26 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 @"C:\temp\submission.json",
                 null,
                 "{\"Version\":\"1.0.0\"}",
-                "{\"Version\":\"1.0.0\"}",
                 @"C:\temp\output.json",
                 @"C:\temp\output.txt");
 
             args.Should().NotContain(" -a ");
+        }
+
+        [Fact]
+        public void BuildArguments_WithNullConfig_OmitsConfigFlag()
+        {
+            var config = CreateConfig();
+            var provider = new ESRPClientExeSigningProvider(config, new FakeProcessRunner(), NullLogger<ESRPClientExeSigningProvider>.Instance);
+
+            var args = provider.BuildArguments(
+                @"C:\temp\submission.json",
+                "{\"Version\":\"1.0.0\"}",
+                null,
+                @"C:\temp\output.json",
+                @"C:\temp\output.txt");
+
+            args.Should().NotContain(" -c ");
         }
 
         [Fact]
