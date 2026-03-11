@@ -619,13 +619,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
         private SigningRequest CreateSigningRequest(params string[] filePaths)
         {
-            var configuration = new SigningConfiguration(_tempDir);
-            var options = new SigningOptions();
-
             return new SigningRequest(
                 filePaths.Select(p => new FileInfo(p)).ToArray(),
-                configuration,
-                options);
+                _tempDir,
+                new SigningOptions());
         }
     }
 

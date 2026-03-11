@@ -17,9 +17,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Abstractions
         /// Calculate signing information for a file.
         /// </summary>
         /// <param name="metadata">File metadata.</param>
-        /// <param name="configuration">Signing configuration.</param>
         /// <returns>Certificate identifier to use for signing, or null if the file should not be signed.</returns>
-        ICertificateIdentifier? CalculateCertificateIdentifier(IFileMetadata metadata, SigningConfiguration configuration);
+        ICertificateIdentifier? CalculateCertificateIdentifier(IFileMetadata metadata);
     }
 }
 

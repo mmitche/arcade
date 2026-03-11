@@ -67,8 +67,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             var sw = Stopwatch.StartNew();
             var errors = new List<SigningError>();
             var signedFiles = new List<SignedFileInfo>();
-            var effectiveInputFiles = ResolveRootInputs(request.InputFiles, request.Configuration.OutputDirectory);
-            var effectiveRequest = new SigningRequest(effectiveInputFiles, request.Configuration, request.Options);
+            var effectiveInputFiles = ResolveRootInputs(request.InputFiles, request.OutputDirectory);
+            var effectiveRequest = new SigningRequest(effectiveInputFiles, request.TempDirectory, request.Options, request.OutputDirectory);
 
             // Build the input→output mapping for FileResults tracking.
             // The two lists are parallel: request.InputFiles[i] maps to effectiveInputFiles[i].
@@ -175,7 +175,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
                 try
                 {
-                    await TrackFile(filePath, null, request.Configuration, cancellationToken);
+                    await TrackFile(filePath, null, request.TempDirectory, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -191,13 +191,13 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// </summary>
         /// <param name="filePath">Path to the file on disk.</param>
         /// <param name="parentNode">Optional parent node if the file is contained within another container.</param>
-        /// <param name="configuration">Signing configuration.</param>
+        /// <param name="tempDirectory">Temporary directory for intermediate files.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The node representing the tracked file.</returns>
         private async Task<FileNodeBase> TrackFile(
             string filePath,
             FileNode? parentNode,
-            SigningConfiguration configuration,
+            string tempDirectory,
             CancellationToken cancellationToken)
         {
             // If the file does not exist, then throw
@@ -230,7 +230,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             var metadata = await _fileAnalyzer.AnalyzeAsync(filePath, cancellationToken);
 
             // First occurrence: delegate to DiscoverFileAsync for full analysis
-            return await DiscoverFileAsync(contentKey, location, metadata, parentNode, configuration, cancellationToken);
+            return await DiscoverFileAsync(contentKey, location, metadata, parentNode, tempDirectory, cancellationToken);
         }
 
         /// <summary>
@@ -240,14 +240,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// <param name="contentStream">Stream containing the file content.</param>
         /// <param name="relativePath">Relative path of the file within its container.</param>
         /// <param name="parentNode">Container node that owns this entry.</param>
-        /// <param name="configuration">Signing configuration.</param>
+        /// <param name="tempDirectory">Temporary directory for intermediate files.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The node representing the tracked file.</returns>
         private async Task<FileNodeBase> TrackNestedFile(
             Stream contentStream,
             string relativePath,
             FileNode parentNode,
-            SigningConfiguration configuration,
+            string tempDirectory,
             CancellationToken cancellationToken)
         {
             if (contentStream == null)
@@ -293,12 +293,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             string filePath = await WriteStreamToTempFileAsync(
                 contentStream,
                 relativePath,
-                configuration.TempDirectory,
+                tempDirectory,
                 cancellationToken);
 
             _fileDeduplicator.RegisterFile(contentKey, filePath);
 
-            return await DiscoverFileAsync(contentKey, new FileLocation(filePath, relativePath), metadata, parentNode, configuration, cancellationToken);
+            return await DiscoverFileAsync(contentKey, new FileLocation(filePath, relativePath), metadata, parentNode, tempDirectory, cancellationToken);
         }
 
         /// <summary>
@@ -393,7 +393,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// <param name="location">File location information (path on disk and optional relative path in container).</param>
         /// <param name="metadata">Analyzed file metadata.</param>
         /// <param name="parentNode">Optional parent node if the file is contained within another container.</param>
-        /// <param name="configuration">Signing configuration.</param>
+        /// <param name="tempDirectory">Temporary directory for intermediate files.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>The discovered node.</returns>
         private async Task<FileNode> DiscoverFileAsync(
@@ -401,7 +401,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             FileLocation location,
             IFileMetadata metadata,
             FileNode? parentNode,
-            SigningConfiguration configuration,
+            string tempDirectory,
             CancellationToken cancellationToken)
         {
             // First occurrence: full analysis and potential container extraction
@@ -412,7 +412,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 location.FilePathOnDisk,
                 parentNode?.ContentKey.FileName ?? "<root>");
 
-            var certificateIdentifier = _signatureCalculator.CalculateCertificateIdentifier(metadata, configuration);
+            var certificateIdentifier = _signatureCalculator.CalculateCertificateIdentifier(metadata);
 
             // Create node
             var node = new FileNode(contentKey, location, metadata, certificateIdentifier);
@@ -439,7 +439,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             // If this is a container (has a registered handler), recursively discover its contents
             if (isContainer)
             {
-                await DiscoverContainerContentsAsync(node, handler!, configuration, cancellationToken);
+                await DiscoverContainerContentsAsync(node, handler!, tempDirectory, cancellationToken);
             }
 
             return node;
@@ -450,21 +450,21 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// </summary>
         /// <param name="containerNode">Container node whose contents should be discovered.</param>
         /// <param name="handler">Handler used to read entries from the container.</param>
-        /// <param name="configuration">Signing configuration.</param>
+        /// <param name="tempDirectory">Temporary directory for intermediate files.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         private async Task DiscoverContainerContentsAsync(
             FileNode containerNode,
             IContainerHandler handler,
-            SigningConfiguration configuration,
+            string tempDirectory,
             CancellationToken cancellationToken)
         {
             _logger.LogDebug("Discovering contents of container: {FileName} [{ContentHash}]", containerNode.ContentKey.FileName, ShortHash(containerNode.ContentKey.ContentHash));
 
-            await foreach (var entry in handler.ReadEntriesAsync(containerNode.Location.FilePathOnDisk!, configuration.TempDirectory, cancellationToken))
+            await foreach (var entry in handler.ReadEntriesAsync(containerNode.Location.FilePathOnDisk!, tempDirectory, cancellationToken))
             {
                 using (entry)
                 {
-                    await TrackNestedFile(entry.ContentStream!, entry.RelativePath, containerNode, configuration, cancellationToken);
+                    await TrackNestedFile(entry.ContentStream!, entry.RelativePath, containerNode, tempDirectory, cancellationToken);
                 }
             }
         }
@@ -509,7 +509,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 {
                     _logger.LogInformation("Repack round {Round}: {FileCount} container(s) ready", roundNumber, toRepack.Count);
                     var repackSw = Stopwatch.StartNew();
-                    await RepackContainersAsync(toRepack, request.Configuration.TempDirectory, errors, cancellationToken);
+                    await RepackContainersAsync(toRepack, request.TempDirectory, errors, cancellationToken);
                     repackSw.Stop();
                     roundInfo.RepackDuration = repackSw.Elapsed;
                     roundInfo.ContainersRepacked = toRepack.Count;

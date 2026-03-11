@@ -115,7 +115,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(containerFile) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -159,7 +159,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new List<FileInfo> { new(testFile1), new(testFile2) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -200,7 +200,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(testFile) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -238,7 +238,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(containerFile) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -363,7 +363,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(dup1), new FileInfo(dup2), new FileInfo(outer) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -442,7 +442,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(file1), new FileInfo(file2) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -501,10 +501,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var file2Key = new FileContentKey(await ContentHash.FromStreamAsync(file2Stream), "file2.txt");
             var containerKey = new FileContentKey(await ContentHash.FromStreamAsync(containerStream), "container.testcontainer");
 
-            var cfg = new SigningConfiguration(_workingDir);
-            var file1Node = new FileNode(file1Key, new FileLocation(file1Path, RelativePathInContainer: null), file1Metadata, sigCalc.CalculateCertificateIdentifier(file1Metadata, cfg));
-            var file2Node = new FileNode(file2Key, new FileLocation(file2Path, RelativePathInContainer: null), file2Metadata, sigCalc.CalculateCertificateIdentifier(file2Metadata, cfg));
-            var containerNode = new FileNode(containerKey, new FileLocation(containerPath, RelativePathInContainer: null), containerMetadata, sigCalc.CalculateCertificateIdentifier(containerMetadata, cfg));
+            var file1Node = new FileNode(file1Key, new FileLocation(file1Path, RelativePathInContainer: null), file1Metadata, sigCalc.CalculateCertificateIdentifier(file1Metadata));
+            var file2Node = new FileNode(file2Key, new FileLocation(file2Path, RelativePathInContainer: null), file2Metadata, sigCalc.CalculateCertificateIdentifier(file2Metadata));
+            var containerNode = new FileNode(containerKey, new FileLocation(containerPath, RelativePathInContainer: null), containerMetadata, sigCalc.CalculateCertificateIdentifier(containerMetadata));
 
             graph.AddNode(containerNode, null);
             graph.AddNode(file1Node, containerNode);
@@ -645,7 +644,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(testFile) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act & Assert
@@ -665,7 +664,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(container1), new FileInfo(container2), new FileInfo(simpleFile) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -731,10 +730,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 });
 
             // Setup SignatureCalculator mock
-            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(
-                It.IsAny<IFileMetadata>(),
-                It.IsAny<SigningConfiguration>()))
-                .Returns((IFileMetadata metadata, SigningConfiguration config) => Mock.Of<ICertificateIdentifier>(ci => ci.Name == "TestCert"));
+            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(It.IsAny<IFileMetadata>()))
+                .Returns((IFileMetadata metadata) => Mock.Of<ICertificateIdentifier>(ci => ci.Name == "TestCert"));
 
             // Setup SigningProvider mock
             _mockSigningProvider.Setup(p => p.SignFilesAsync(
@@ -850,7 +847,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(testFile) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -870,9 +867,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         {
             // Arrange – return null cert for this file so it gets skipped
             _mockSignatureCalculator.Reset();
-            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(
-                It.IsAny<IFileMetadata>(),
-                It.IsAny<SigningConfiguration>()))
+            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(It.IsAny<IFileMetadata>()))
                 .Returns((ICertificateIdentifier?)null);
 
             var testFile = CreateTestFile("no-cert.txt", "content");
@@ -880,7 +875,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(testFile) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -903,9 +898,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var skippedFile = CreateTestFile("no-sign.txt", "skip-content");
 
             _mockSignatureCalculator.Reset();
-            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(
-                It.IsAny<IFileMetadata>(),
-                It.IsAny<SigningConfiguration>()))
+            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(It.IsAny<IFileMetadata>()))
                 .Returns(Mock.Of<ICertificateIdentifier>(ci => ci.Name == "TestCert"));
 
             // Override: make the second file already signed so it gets skipped
@@ -924,7 +917,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(signedFile), new FileInfo(skippedFile) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act
@@ -959,8 +952,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(inputFile) },
-                new SigningConfiguration(_workingDir, outputDir),
-                new SigningOptions());
+                _workingDir,
+                new SigningOptions(),
+                outputDir);
 
             // Act
             var result = await orchestrator.SignAsync(request);
@@ -980,9 +974,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         {
             // Arrange – no certs assigned
             _mockSignatureCalculator.Reset();
-            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(
-                It.IsAny<IFileMetadata>(),
-                It.IsAny<SigningConfiguration>()))
+            _mockSignatureCalculator.Setup(c => c.CalculateCertificateIdentifier(It.IsAny<IFileMetadata>()))
                 .Returns((ICertificateIdentifier?)null);
 
             var file1 = CreateTestFile("a.txt", "aaa");
@@ -993,7 +985,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             var request = new SigningRequest(
                 new[] { new FileInfo(file1), new FileInfo(file2), new FileInfo(file3) },
-                new SigningConfiguration(_workingDir),
+                _workingDir,
                 new SigningOptions());
 
             // Act

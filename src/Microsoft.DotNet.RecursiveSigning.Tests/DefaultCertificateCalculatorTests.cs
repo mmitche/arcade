@@ -34,9 +34,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                     [".dll"] = "DemoCertB"
                 });
             var calculator = new DefaultCertificateCalculator(rules);
-            var configuration = new SigningConfiguration("temp");
-
-            var certificate = calculator.CalculateCertificateIdentifier(new FileMetadata("special.dll"), configuration);
+            var certificate = calculator.CalculateCertificateIdentifier(new FileMetadata("special.dll"));
 
             certificate.Should().NotBeNull();
             certificate!.Name.Should().Be("DemoCertA");
@@ -57,9 +55,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                     [".exe"] = "DemoCertC"
                 });
             var calculator = new DefaultCertificateCalculator(rules);
-            var configuration = new SigningConfiguration("temp");
-
-            var certificate = calculator.CalculateCertificateIdentifier(new FileMetadata("app.exe"), configuration);
+            var certificate = calculator.CalculateCertificateIdentifier(new FileMetadata("app.exe"));
 
             certificate.Should().NotBeNull();
             certificate!.Name.Should().Be("DemoCertC");
@@ -80,9 +76,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                     [".dll"] = "DemoCertB"
                 });
             var calculator = new DefaultCertificateCalculator(rules);
-            var configuration = new SigningConfiguration("temp");
-
-            var certificate = calculator.CalculateCertificateIdentifier(new FileMetadata("readme.txt"), configuration);
+            var certificate = calculator.CalculateCertificateIdentifier(new FileMetadata("readme.txt"));
 
             certificate.Should().BeNull();
         }
@@ -99,9 +93,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 },
                 fileExtensionMappings: new Dictionary<string, string>());
             var calculator = new DefaultCertificateCalculator(rules);
-            var configuration = new SigningConfiguration("temp");
-
-            var act = () => calculator.CalculateCertificateIdentifier(new FileMetadata("special.dll"), configuration);
+            var act = () => calculator.CalculateCertificateIdentifier(new FileMetadata("special.dll"));
 
             act.Should().Throw<InvalidOperationException>();
         }
@@ -124,9 +116,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                     [".dll"] = "DualCert"
                 });
             var calculator = new DefaultCertificateCalculator(rules);
-            var configuration = new SigningConfiguration("temp");
-
-            var cert = calculator.CalculateCertificateIdentifier(new FileMetadata("lib.dll"), configuration);
+            var cert = calculator.CalculateCertificateIdentifier(new FileMetadata("lib.dll"));
 
             cert.Should().NotBeNull();
             cert!.AlwaysSign.Should().BeTrue();
@@ -147,9 +137,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                     [".dll"] = "NormalCert"
                 });
             var calculator = new DefaultCertificateCalculator(rules);
-            var configuration = new SigningConfiguration("temp");
-
-            var cert = calculator.CalculateCertificateIdentifier(new FileMetadata("lib.dll"), configuration);
+            var cert = calculator.CalculateCertificateIdentifier(new FileMetadata("lib.dll"));
 
             cert.Should().NotBeNull();
             cert!.AlwaysSign.Should().BeFalse();

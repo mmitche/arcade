@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable enable
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -18,9 +20,15 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         public IReadOnlyList<FileInfo> InputFiles { get; }
 
         /// <summary>
-        /// Signing configuration.
+        /// Temporary directory for unpacking containers and other intermediate files.
         /// </summary>
-        public SigningConfiguration Configuration { get; }
+        public string TempDirectory { get; }
+
+        /// <summary>
+        /// Optional output directory for root input artifacts.
+        /// When set, final signed root files are copied here while working files continue to be updated in place.
+        /// </summary>
+        public string? OutputDirectory { get; }
 
         /// <summary>
         /// Options for signing process.
@@ -29,12 +37,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
 
         public SigningRequest(
             IReadOnlyList<FileInfo> inputFiles,
-            SigningConfiguration configuration,
-            SigningOptions options)
+            string tempDirectory,
+            SigningOptions options,
+            string? outputDirectory = null)
         {
             InputFiles = inputFiles ?? throw new ArgumentNullException(nameof(inputFiles));
-            Configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            TempDirectory = tempDirectory ?? throw new ArgumentNullException(nameof(tempDirectory));
             Options = options ?? throw new ArgumentNullException(nameof(options));
+            OutputDirectory = string.IsNullOrWhiteSpace(outputDirectory) ? null : outputDirectory;
         }
     }
 }

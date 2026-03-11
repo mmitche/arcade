@@ -311,8 +311,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
 
             var request = new SigningRequest(
                 resolvedInputs.Select(path => new FileInfo(path)).ToArray(),
-                new SigningConfiguration(tempDirectory, outputDirectory),
-                new SigningOptions());
+                tempDirectory,
+                new SigningOptions(),
+                outputDirectory);
 
             var result = await recursiveSigning.SignAsync(request);
 

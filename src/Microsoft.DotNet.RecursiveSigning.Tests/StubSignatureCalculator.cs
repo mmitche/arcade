@@ -17,7 +17,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
     {
         private const string TestCertificate = "TestCert";
 
-        public ICertificateIdentifier? CalculateCertificateIdentifier(IFileMetadata metadata, SigningConfiguration configuration)
+        public ICertificateIdentifier? CalculateCertificateIdentifier(IFileMetadata metadata)
         {
             // For Phase 1, always return the same test certificate.
             // No PKT analysis, no target framework detection, no already-signed detection.

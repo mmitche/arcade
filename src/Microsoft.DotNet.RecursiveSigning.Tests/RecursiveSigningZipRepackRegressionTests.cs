@@ -40,7 +40,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 var recursiveSigning = BuildRecursiveSigning();
                 var request = new SigningRequest(
                     new[] { new FileInfo(containerPath) },
-                    new SigningConfiguration(tempDirectory),
+                    tempDirectory,
                     new SigningOptions());
 
                 var result = await recursiveSigning.SignAsync(request);
@@ -80,8 +80,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 var recursiveSigning = BuildRecursiveSigning();
                 var request = new SigningRequest(
                     new[] { new FileInfo(filePath) },
-                    new SigningConfiguration(tempDirectory, outputDirectory),
-                    new SigningOptions());
+                    tempDirectory,
+                    new SigningOptions(),
+                    outputDirectory);
 
                 var result = await recursiveSigning.SignAsync(request);
 
@@ -122,8 +123,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 var recursiveSigning = BuildRecursiveSigning();
                 var request = new SigningRequest(
                     new[] { new FileInfo(containerPath) },
-                    new SigningConfiguration(tempDirectory, outputDirectory),
-                    new SigningOptions());
+                    tempDirectory,
+                    new SigningOptions(),
+                    outputDirectory);
 
                 var result = await recursiveSigning.SignAsync(request);
 
@@ -169,8 +171,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 var recursiveSigning = BuildRecursiveSigning();
                 var request = new SigningRequest(
                     new[] { new FileInfo(fileA), new FileInfo(fileB) },
-                    new SigningConfiguration(tempDirectory, outputDirectory),
-                    new SigningOptions());
+                    tempDirectory,
+                    new SigningOptions(),
+                    outputDirectory);
 
                 var result = await recursiveSigning.SignAsync(request);
 

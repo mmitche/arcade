@@ -21,16 +21,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             _rules = rules ?? throw new ArgumentNullException(nameof(rules));
         }
 
-        public ICertificateIdentifier? CalculateCertificateIdentifier(IFileMetadata metadata, SigningConfiguration configuration)
+        public ICertificateIdentifier? CalculateCertificateIdentifier(IFileMetadata metadata)
         {
             if (metadata == null)
             {
                 throw new ArgumentNullException(nameof(metadata));
-            }
-
-            if (configuration == null)
-            {
-                throw new ArgumentNullException(nameof(configuration));
             }
 
             if (TryResolveFriendlyName(metadata.FileName, out var friendlyName))
