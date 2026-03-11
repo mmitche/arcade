@@ -30,9 +30,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
 
             // Core orchestration services
             services.AddSingleton<IFileSystem, FileSystem>();
-            services.AddSingleton<IRecursiveSigning, Implementation.RecursiveSigning>();
-            services.AddSingleton<ISigningGraph, SigningGraph>();
-            services.AddSingleton<IFileDeduplicator, DefaultFileDeduplicator>();
+            services.AddTransient<IRecursiveSigning, Implementation.RecursiveSigning>();
 
             // Built-in file type analyzers (used by DefaultFileAnalyzer to detect
             // Authenticode signatures, PE metadata, etc.)

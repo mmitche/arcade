@@ -25,30 +25,31 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         private readonly IFileSystem _fileSystem;
         private readonly IFileAnalyzer _fileAnalyzer;
         private readonly ICertificateCalculator _signatureCalculator;
-        private readonly ISigningGraph _signingGraph;
-        private readonly IFileDeduplicator _fileDeduplicator;
         private readonly IContainerHandlerRegistry _containerHandlerRegistry;
         private readonly ISigningProvider _signingProvider;
+        private readonly IFileDeduplicator? _injectedFileDeduplicator;
         private readonly ILogger<RecursiveSigning> _logger;
+
+        // Per-operation state, initialized at the start of each SignAsync call.
+        private ISigningGraph _signingGraph = null!;
+        private IFileDeduplicator _fileDeduplicator = null!;
 
         public RecursiveSigning(
             IFileSystem fileSystem,
             IFileAnalyzer fileAnalyzer,
             ICertificateCalculator signatureCalculator,
-            ISigningGraph signingGraph,
-            IFileDeduplicator fileDeduplicator,
             IContainerHandlerRegistry containerHandlerRegistry,
             ISigningProvider signingProvider,
-            ILogger<RecursiveSigning> logger)
+            ILogger<RecursiveSigning> logger,
+            IFileDeduplicator? fileDeduplicator = null)
         {
             _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
             _fileAnalyzer = fileAnalyzer ?? throw new ArgumentNullException(nameof(fileAnalyzer));
             _signatureCalculator = signatureCalculator ?? throw new ArgumentNullException(nameof(signatureCalculator));
-            _signingGraph = signingGraph ?? throw new ArgumentNullException(nameof(signingGraph));
-            _fileDeduplicator = fileDeduplicator ?? throw new ArgumentNullException(nameof(fileDeduplicator));
             _containerHandlerRegistry = containerHandlerRegistry ?? throw new ArgumentNullException(nameof(containerHandlerRegistry));
             _signingProvider = signingProvider ?? throw new ArgumentNullException(nameof(signingProvider));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _injectedFileDeduplicator = fileDeduplicator;
         }
 
         /// <summary>
@@ -59,6 +60,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// <returns>Signing result with signed files, errors, and telemetry.</returns>
         public async Task<SigningResult> SignAsync(SigningRequest request, CancellationToken cancellationToken = default)
         {
+            // Create fresh per-operation state.
+            _signingGraph = new SigningGraph();
+            _fileDeduplicator = _injectedFileDeduplicator ?? new DefaultFileDeduplicator();
+
             var sw = Stopwatch.StartNew();
             var errors = new List<SigningError>();
             var signedFiles = new List<SignedFileInfo>();
@@ -690,13 +695,17 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             var allNodes = _signingGraph.GetAllNodes();
 
             // For implicit deduplication, reference nodes are not signed directly.
-            // Still report them as signed if their canonical/original node was signed.
+            // Still report them as signed if their canonical/original node was signed,
+            // but only if they represent a distinct file path (not the same extraction path).
+            var reportedPaths = new HashSet<string>(signedFiles.Select(f => f.FilePath), StringComparer.OrdinalIgnoreCase);
             foreach (var referenceNode in allNodes.OfType<ReferenceNode>())
             {
-                if (referenceNode.CanonicalNode.State == FileNodeState.Complete)
+                if (referenceNode.CanonicalNode.State == FileNodeState.Complete
+                    && referenceNode.Location.FilePathOnDisk != null
+                    && reportedPaths.Add(referenceNode.Location.FilePathOnDisk))
                 {
                     signedFiles.Add(new SignedFileInfo(
-                        referenceNode.Location.FilePathOnDisk!,
+                        referenceNode.Location.FilePathOnDisk,
                         referenceNode.CanonicalNode.CertificateIdentifier?.Name ?? string.Empty,
                         wasAlreadySigned: true));
                 }
@@ -814,7 +823,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 Rounds = rounds,
             };
 
-            return new SigningResult(success, signedFiles, errors, telemetry, fileResults);
+            return new SigningResult(success, signedFiles, errors, telemetry, fileResults, _signingGraph);
         }
 
         /// <summary>

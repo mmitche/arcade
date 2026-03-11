@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.DotNet.RecursiveSigning.Abstractions;
 using Microsoft.DotNet.RecursiveSigning.Configuration;
+using Microsoft.DotNet.RecursiveSigning.Implementation;
 using Microsoft.DotNet.RecursiveSigning.Models;
 using Moq;
 using Xunit;
@@ -478,8 +479,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         [Fact]
         public async Task SigningGraph_ShouldCalculateRoundsCorrectly()
         {
-            // Arrange
-            var graph = _serviceProvider.GetRequiredService<ISigningGraph>();
+            // Arrange — create a fresh graph (not from DI; this is a unit test of SigningGraph)
+            var graph = new SigningGraph();
             var fileAnalyzer = _serviceProvider.GetRequiredService<IFileAnalyzer>();
             var sigCalc = _serviceProvider.GetRequiredService<ICertificateCalculator>();
 
@@ -526,8 +527,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         [Fact]
         public async Task FileDeduplicator_WhenDuplicate_Throws_AndOriginalPathIsFirstPath()
         {
-            // Arrange
-            var deduplicator = _serviceProvider.GetRequiredService<IFileDeduplicator>();
+            // Arrange — create a fresh deduplicator (not from DI; this is a unit test of DefaultFileDeduplicator)
+            var deduplicator = new DefaultFileDeduplicator();
             var analyzer = _serviceProvider.GetRequiredService<IFileAnalyzer>();
 
             // Create two files with same name in different locations
@@ -685,7 +686,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             result.SignedFiles.Should().NotBeEmpty();
 
             // Verify all files were processed
-            var graph = _serviceProvider.GetRequiredService<ISigningGraph>();
+            var graph = result.Graph!;
             graph.IsComplete().Should().BeTrue();
 
             // Verify telemetry

@@ -102,7 +102,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             int initialFileCount = _fileSystem.Files.Count;
 
             // Act: Run discovery phase
-            await recursiveSigning.SignAsync(request, CancellationToken.None);
+            var result = await recursiveSigning.SignAsync(request, CancellationToken.None);
 
             // Assert: Only temp directory writes should occur (no duplicate extraction)
             var tempWrites = _fileSystem.Files.Keys
@@ -119,7 +119,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             // Both files are analyzed from their original locations, no extraction needed
             // Only signing phase should write files
-            var graph = _services.GetRequiredService<ISigningGraph>();
+            var graph = result.Graph!;
             var allNodes = graph.GetAllNodes();
 
             allNodes.Should().HaveCount(2, "both files should be in the graph");
@@ -159,10 +159,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             int initialFileCount = _fileSystem.Files.Count;
 
             // Act: Run discovery phase
-            await recursiveSigning.SignAsync(request, CancellationToken.None);
+            var result = await recursiveSigning.SignAsync(request, CancellationToken.None);
 
             // Verify graph structure
-            var graph = _services.GetRequiredService<ISigningGraph>();
+            var graph = result.Graph!;
             var allNodes = graph.GetAllNodes();
 
             // Should have: topLevelFile, containerFile, and a reference node for shared.dll in container
@@ -212,7 +212,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             int initialFileCount = _fileSystem.Files.Count;
 
             // Act: Run discovery phase
-            await recursiveSigning.SignAsync(request, CancellationToken.None);
+            var result = await recursiveSigning.SignAsync(request, CancellationToken.None);
 
             // Assert: Only the first occurrence should be extracted
             var tempWrites = _fileSystem.Files.Keys
@@ -232,7 +232,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 "only the first occurrence of duplicate file should be extracted to disk");
 
             // Verify graph structure
-            var graph = _services.GetRequiredService<ISigningGraph>();
+            var graph = result.Graph!;
             var allNodes = graph.GetAllNodes();
 
             // Should have: container + 2 child nodes (first extraction + reference node)
@@ -309,7 +309,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             int initialFileCount = _fileSystem.Files.Count;
 
             // Act: Run discovery phase
-            await recursiveSigning.SignAsync(request, CancellationToken.None);
+            var result = await recursiveSigning.SignAsync(request, CancellationToken.None);
 
             // Assert: Both entries should be extracted because deduplication is by content + file name
             var extracted = _fileSystem.Files.Keys
@@ -328,7 +328,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             extracted.Should().HaveCount(2, "entries with different names should not be deduplicated");
             extracted.Distinct().Should().HaveCount(2, "each entry should be extracted to a distinct path");
 
-            var graph = _services.GetRequiredService<ISigningGraph>();
+            var graph = result.Graph!;
             var allNodes = graph.GetAllNodes();
 
             allNodes.Should().HaveCount(3, "should have container and two child nodes");
@@ -375,7 +375,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             int initialFileCount = _fileSystem.Files.Count;
 
             // Act: Run discovery phase
-            await recursiveSigning.SignAsync(request, CancellationToken.None);
+            var result = await recursiveSigning.SignAsync(request, CancellationToken.None);
 
             // Assert: Only one extraction of shared.dll should occur
             var tempWrites = _fileSystem.Files.Keys
@@ -395,7 +395,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 "only the first occurrence should be extracted, even across containers");
 
             // Verify graph structure
-            var graph = _services.GetRequiredService<ISigningGraph>();
+            var graph = result.Graph!;
             var allNodes = graph.GetAllNodes();
 
             // Should have: 2 containers + 2 child nodes (one extracted + one reference)
@@ -456,7 +456,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             int initialFileCount = _fileSystem.Files.Count;
 
             // Act: Run discovery phase
-            await recursiveSigning.SignAsync(request, CancellationToken.None);
+            var result = await recursiveSigning.SignAsync(request, CancellationToken.None);
 
             // Assert: Both entries should be extracted because the file names differ
             var extracted = _fileSystem.Files.Keys
@@ -475,7 +475,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             extracted.Should().HaveCount(2, "entries with different names should not be deduplicated across containers");
             extracted.Distinct().Should().HaveCount(2, "each entry should be extracted to a distinct path");
 
-            var graph = _services.GetRequiredService<ISigningGraph>();
+            var graph = result.Graph!;
             var allNodes = graph.GetAllNodes();
 
             allNodes.Should().HaveCount(4, "should have 2 containers and 2 child nodes");
@@ -522,7 +522,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             int initialFileCount = _fileSystem.Files.Count;
 
             // Act: Run discovery phase
-            await recursiveSigning.SignAsync(request, CancellationToken.None);
+            var result = await recursiveSigning.SignAsync(request, CancellationToken.None);
 
             // Assert: Only one extraction of content.dll should occur
             var tempWrites = _fileSystem.Files.Keys
@@ -542,7 +542,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 "only first occurrence should be extracted, even in nested containers");
 
             // Verify graph has correct structure
-            var graph = _services.GetRequiredService<ISigningGraph>();
+            var graph = result.Graph!;
             var allNodes = graph.GetAllNodes();
 
             // Find all content.dll nodes

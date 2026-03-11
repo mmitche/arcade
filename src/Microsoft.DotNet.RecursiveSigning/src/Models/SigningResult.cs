@@ -1,8 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+#nullable enable
+
 using System;
 using System.Collections.Generic;
+using Microsoft.DotNet.RecursiveSigning.Abstractions;
 
 namespace Microsoft.DotNet.RecursiveSigning.Models
 {
@@ -36,18 +39,26 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         /// </summary>
         public SigningTelemetry Telemetry { get; }
 
+        /// <summary>
+        /// The signing dependency graph from the completed operation.
+        /// Available for post-signing inspection, serialization, and diagnostics.
+        /// </summary>
+        public ISigningGraph? Graph { get; }
+
         public SigningResult(
             bool success,
             IReadOnlyList<SignedFileInfo> signedFiles,
             IReadOnlyList<SigningError> errors,
             SigningTelemetry telemetry,
-            IReadOnlyList<FileResult> fileResults = null)
+            IReadOnlyList<FileResult>? fileResults = null,
+            ISigningGraph? graph = null)
         {
             Success = success;
             SignedFiles = signedFiles ?? throw new ArgumentNullException(nameof(signedFiles));
             Errors = errors ?? throw new ArgumentNullException(nameof(errors));
             Telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
             FileResults = fileResults ?? Array.Empty<FileResult>();
+            Graph = graph;
         }
     }
 

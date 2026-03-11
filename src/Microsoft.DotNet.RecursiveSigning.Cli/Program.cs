@@ -319,8 +319,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             // Write signing report if requested
             if (!string.IsNullOrEmpty(signingReportPath))
             {
-                var signingGraph = provider.GetRequiredService<ISigningGraph>();
-                var reportJson = SigningGraphSerializer.Serialize(signingGraph);
+                var signingGraph = result.Graph;
+                var reportJson = SigningGraphSerializer.Serialize(signingGraph!);
                 var reportDir = Path.GetDirectoryName(signingReportPath);
                 if (!string.IsNullOrEmpty(reportDir))
                 {
