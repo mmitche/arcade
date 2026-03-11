@@ -113,7 +113,7 @@ The full file path is NOT included in the content key because:
 ## Integration with Signing Workflow
 The DefaultFileDeduplicator is registered as a singleton service in the dependency injection container:
 ```csharp
-services.AddSingleton<IFileDeduplicator, DefaultFileDeduplicator>();
+services.AddTransient<IFileDeduplicator, DefaultFileDeduplicator>();
 ```
 
 This ensures a single instance tracks all files throughout the entire signing session, enabling global deduplication across all input artifacts and their nested contents.

@@ -50,6 +50,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
 
             services.AddSingleton<IFileSystem, FileSystem>();
             services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
+            services.AddTransient<IFileDeduplicator, DefaultFileDeduplicator>();
             services.AddTransient<IRecursiveSigning, Implementation.RecursiveSigning>();
 
             return services;

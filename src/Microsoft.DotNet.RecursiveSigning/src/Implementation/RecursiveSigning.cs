@@ -27,12 +27,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         private readonly ICertificateCalculator _signatureCalculator;
         private readonly IReadOnlyList<IContainerHandler> _containerHandlers;
         private readonly ISigningProvider _signingProvider;
-        private readonly IFileDeduplicator? _injectedFileDeduplicator;
+        private readonly IFileDeduplicator _fileDeduplicator;
         private readonly ILogger<RecursiveSigning> _logger;
 
         // Per-operation state, initialized at the start of each SignAsync call.
         private ISigningGraph _signingGraph = null!;
-        private IFileDeduplicator _fileDeduplicator = null!;
 
         public RecursiveSigning(
             IFileSystem fileSystem,
@@ -40,16 +39,16 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             ICertificateCalculator signatureCalculator,
             IEnumerable<IContainerHandler> containerHandlers,
             ISigningProvider signingProvider,
-            ILogger<RecursiveSigning> logger,
-            IFileDeduplicator? fileDeduplicator = null)
+            IFileDeduplicator fileDeduplicator,
+            ILogger<RecursiveSigning> logger)
         {
             _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
             _fileAnalyzer = fileAnalyzer ?? throw new ArgumentNullException(nameof(fileAnalyzer));
             _signatureCalculator = signatureCalculator ?? throw new ArgumentNullException(nameof(signatureCalculator));
             _containerHandlers = (containerHandlers ?? throw new ArgumentNullException(nameof(containerHandlers))).ToList();
             _signingProvider = signingProvider ?? throw new ArgumentNullException(nameof(signingProvider));
+            _fileDeduplicator = fileDeduplicator ?? throw new ArgumentNullException(nameof(fileDeduplicator));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _injectedFileDeduplicator = fileDeduplicator;
         }
 
         /// <summary>
@@ -62,7 +61,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         {
             // Create fresh per-operation state.
             _signingGraph = new SigningGraph();
-            _fileDeduplicator = _injectedFileDeduplicator ?? new DefaultFileDeduplicator();
 
             var sw = Stopwatch.StartNew();
             var errors = new List<SigningError>();
