@@ -143,13 +143,13 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 int uniqueFilesSigned = _signingGraph.GetAllNodes().OfType<FileNode>()
                     .Count(n => n.State == FileNodeState.Complete);
 
-                _logger.LogInformation(
-                    "Signing completed in {Duration}ms. Success: {Success}, Unique files signed: {SignedCount}/{TotalCount}",
-                    sw.ElapsedMilliseconds, success, uniqueFilesSigned, allNodes.Count);
-
-                return CreateResult(success, errors, sw.Elapsed, uniqueFilesSigned, allNodes.Count,
+                var result = CreateResult(success, errors, sw.Elapsed, uniqueFilesSigned, allNodes.Count,
                     discoverySw.Elapsed, signingSw.Elapsed, finalizationSw.Elapsed, roundTelemetry, duplicateCount,
                     BuildFileResults(inputOutputMapping));
+
+                LogTelemetrySummary(result);
+
+                return result;
             }
             catch (OperationCanceledException)
             {
@@ -861,6 +861,42 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             };
 
             return new SigningResult(success, errors, telemetry, fileResults, _signingGraph);
+        }
+
+        private void LogTelemetrySummary(SigningResult result)
+        {
+            var t = result.Telemetry;
+
+            _logger.LogInformation(
+                "Signing {Status} | Total: {TotalFiles}, Signed: {Signed}, Skipped: {Skipped}, Duplicates: {Duplicates}, Rounds: {Rounds}",
+                result.Success ? "succeeded" : "failed",
+                t.TotalFiles, t.UniqueFilesSigned, t.FilesSkipped, t.DuplicateFiles, t.SigningRounds);
+
+            _logger.LogInformation(
+                "Timing | Discovery: {Discovery}, Signing: {Signing}, Finalization: {Finalization}, Total: {Total}",
+                FormatDuration(t.DiscoveryDuration),
+                FormatDuration(t.SigningDuration),
+                FormatDuration(t.FinalizationDuration),
+                FormatDuration(t.Duration));
+
+            foreach (var r in t.Rounds)
+            {
+                _logger.LogInformation(
+                    "  Round {Round}: {Files} files, sign {SignTime}, repack {RepackTime}",
+                    r.RoundNumber, r.FilesSigned,
+                    FormatDuration(r.SigningDuration),
+                    FormatDuration(r.RepackDuration));
+            }
+        }
+
+        private static string FormatDuration(TimeSpan ts)
+        {
+            if (ts.TotalMinutes >= 1)
+            {
+                return $"{(int)ts.TotalMinutes}m {ts.Seconds:D2}.{ts.Milliseconds / 100}s";
+            }
+
+            return $"{ts.TotalSeconds:F1}s";
         }
 
         /// <summary>
