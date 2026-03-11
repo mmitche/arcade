@@ -71,7 +71,7 @@ stages:
             displayNameSuffix: ' (ESRPClient.exe)'
 
         - powershell: |
-            ./eng/common/dotnet.ps1 nuget push "$(System.DefaultWorkingDirectory)/artifacts/packages/Release/NonShipping/Microsoft.DotNet.RecursiveSigning.*.nupkg" --source https://pkgs.dev.azure.com/dnceng/internal/_packaging/dotnet-sign-test-feed/nuget/v3/index.json --api-key az
+            ./eng/common/dotnet.ps1 nuget push $(System.DefaultWorkingDirectory)artifacts\packages\Release\NonShipping\Microsoft.DotNet.RecursiveSigning.*.nupkg --source https://pkgs.dev.azure.com/dnceng/internal/_packaging/dotnet-sign-test-feed/nuget/v3/index.json --api-key az
 
 - stage: ValidateSdk
   displayName: Validate Arcade SDK

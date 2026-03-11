@@ -25,7 +25,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         private readonly IFileSystem _fileSystem;
         private readonly IFileAnalyzer _fileAnalyzer;
         private readonly ICertificateCalculator _signatureCalculator;
-        private readonly IContainerHandlerRegistry _containerHandlerRegistry;
+        private readonly IReadOnlyList<IContainerHandler> _containerHandlers;
         private readonly ISigningProvider _signingProvider;
         private readonly IFileDeduplicator? _injectedFileDeduplicator;
         private readonly ILogger<RecursiveSigning> _logger;
@@ -38,7 +38,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             IFileSystem fileSystem,
             IFileAnalyzer fileAnalyzer,
             ICertificateCalculator signatureCalculator,
-            IContainerHandlerRegistry containerHandlerRegistry,
+            IEnumerable<IContainerHandler> containerHandlers,
             ISigningProvider signingProvider,
             ILogger<RecursiveSigning> logger,
             IFileDeduplicator? fileDeduplicator = null)
@@ -46,7 +46,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
             _fileAnalyzer = fileAnalyzer ?? throw new ArgumentNullException(nameof(fileAnalyzer));
             _signatureCalculator = signatureCalculator ?? throw new ArgumentNullException(nameof(signatureCalculator));
-            _containerHandlerRegistry = containerHandlerRegistry ?? throw new ArgumentNullException(nameof(containerHandlerRegistry));
+            _containerHandlers = (containerHandlers ?? throw new ArgumentNullException(nameof(containerHandlers))).ToList();
             _signingProvider = signingProvider ?? throw new ArgumentNullException(nameof(signingProvider));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _injectedFileDeduplicator = fileDeduplicator;
@@ -422,7 +422,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             IContainerHandler? handler;
             try
             {
-                handler = _containerHandlerRegistry.FindHandler(location.FilePathOnDisk!);
+                handler = FindHandler(location.FilePathOnDisk!);
             }
             catch (Exception ex)
             {
@@ -636,7 +636,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// <returns>Path to the repacked container on disk.</returns>
         private async Task<string> RepackContainerAsync(FileNode containerNode, string tempDirectory, CancellationToken cancellationToken)
         {
-            var handler = _containerHandlerRegistry.FindHandler(containerNode.Location.FilePathOnDisk!);
+            var handler = FindHandler(containerNode.Location.FilePathOnDisk!);
             if (handler == null)
             {
                 throw new InvalidOperationException($"No handler found for repacking container: {containerNode.Location.FilePathOnDisk}");
@@ -783,6 +783,28 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         {
             string hex = contentHash.ToHexString();
             return hex.Length <= 8 ? hex : hex.Substring(0, 8);
+        }
+
+        /// <summary>
+        /// Finds the container handler for the given file path.
+        /// Returns null if no handler matches. Throws if more than one handler matches.
+        /// </summary>
+        private IContainerHandler? FindHandler(string filePath)
+        {
+            IContainerHandler? match = null;
+            foreach (var handler in _containerHandlers)
+            {
+                if (handler.CanHandle(filePath))
+                {
+                    if (match != null)
+                    {
+                        throw new InvalidOperationException(
+                            $"More than one container handler can handle file '{filePath}'.");
+                    }
+                    match = handler;
+                }
+            }
+            return match;
         }
 
         /// <summary>

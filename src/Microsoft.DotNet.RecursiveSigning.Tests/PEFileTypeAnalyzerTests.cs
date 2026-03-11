@@ -148,11 +148,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         [Fact]
         public async Task DefaultFileAnalyzer_ResolvedViaDI_DetectsSignedPE()
         {
-            // Verify that AddRecursiveSigning registers PEFileTypeAnalyzer so that
+            // Verify that AddDefaultFileAnalyzers registers PEFileTypeAnalyzer so that
             // DefaultFileAnalyzer can detect Authenticode signatures on PE files.
             var services = new ServiceCollection();
-            services.AddRecursiveSigning();
-            services.AddSingleton<IFileAnalyzer, DefaultFileAnalyzer>();
+            services.AddDefaultFileAnalyzers();
             using var provider = services.BuildServiceProvider();
 
             var analyzer = provider.GetRequiredService<IFileAnalyzer>();
@@ -163,7 +162,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var metadata = await analyzer.AnalyzeAsync(stream, "signed.dll");
 
             metadata.ExecutableType.Should().Be(ExecutableType.PE);
-            metadata.IsAlreadySigned.Should().BeTrue("AddRecursiveSigning must register PEFileTypeAnalyzer");
+            metadata.IsAlreadySigned.Should().BeTrue("AddDefaultFileAnalyzers must register PEFileTypeAnalyzer");
         }
 
         // ── Helpers ─────────────────────────────────────────────────────────

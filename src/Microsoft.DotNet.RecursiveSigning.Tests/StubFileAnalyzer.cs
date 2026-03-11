@@ -2,8 +2,10 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.DotNet.RecursiveSigning.Abstractions;
@@ -17,12 +19,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
     /// </summary>
     public sealed class StubFileAnalyzer : IFileAnalyzer
     {
-        private readonly IContainerHandlerRegistry _handlerRegistry;
+        private readonly IReadOnlyList<IContainerHandler> _containerHandlers;
         private readonly IFileSystem _fileSystem;
 
-        public StubFileAnalyzer(IContainerHandlerRegistry handlerRegistry, IFileSystem fileSystem = null!)
+        public StubFileAnalyzer(IEnumerable<IContainerHandler> containerHandlers, IFileSystem fileSystem = null!)
         {
-            _handlerRegistry = handlerRegistry ?? throw new ArgumentNullException(nameof(handlerRegistry));
+            _containerHandlers = (containerHandlers ?? throw new ArgumentNullException(nameof(containerHandlers))).ToList();
             _fileSystem = fileSystem ?? new FileSystem();
         }
 
@@ -65,8 +67,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         public bool IsContainer(string filePath)
         {
             // Check if any handler can process this file
-            var handler = _handlerRegistry.FindHandler(filePath);
-            return handler != null;
+            return _containerHandlers.Any(h => h.CanHandle(filePath));
         }
     }
 }

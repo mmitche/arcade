@@ -85,12 +85,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             services.AddSingleton(_mockSignatureCalculator.Object);
             services.AddSingleton(_mockSigningProvider.Object);
 
-            
-            // Setup container handler registry with mock
-            var mockRegistry = new Mock<IContainerHandlerRegistry>();
-            mockRegistry.Setup(r => r.FindHandler(It.IsAny<string>()))
-                .Returns<string>(path => path.EndsWith(".testcontainer") ? _mockContainerHandler.Object : null);
-            services.AddSingleton(mockRegistry.Object);
+            // Register mock container handler directly
+            services.AddSingleton<IContainerHandler>(_mockContainerHandler.Object);
 
             _serviceProvider = services.BuildServiceProvider();
         }
@@ -130,15 +126,15 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
 
         [Fact]
-        public async Task Discovery_LogsErrorIfHandlerRegistryThrows_AndContinues()
+        public async Task Discovery_LogsErrorIfHandlerLookupThrows_AndContinues()
         {
             // Arrange
             var testFile1 = CreateTestFile("a.bin", "content-a");
             var testFile2 = CreateTestFile("b.bin", "content-b");
 
-            var mockRegistry = new Mock<IContainerHandlerRegistry>();
-            mockRegistry
-                .Setup(r => r.FindHandler(It.IsAny<string>()))
+            // A handler whose CanHandle always throws simulates a handler lookup error.
+            var badHandler = new Mock<IContainerHandler>();
+            badHandler.Setup(h => h.CanHandle(It.IsAny<string>()))
                 .Throws(new InvalidOperationException("boom"));
 
             var mockLogger = new Mock<ILogger<Implementation.RecursiveSigning>>();
@@ -151,7 +147,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             services.AddSingleton(_mockFileAnalyzer.Object);
             services.AddSingleton(_mockSignatureCalculator.Object);
             services.AddSingleton(_mockSigningProvider.Object);
-            services.AddSingleton(mockRegistry.Object);
+            services.AddSingleton<IContainerHandler>(badHandler.Object);
             services.AddSingleton(mockLogger.Object);
 
             using var sp = services.BuildServiceProvider();
@@ -341,10 +337,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                     return Task.CompletedTask;
                 });
 
-            var mockRegistry = new Mock<IContainerHandlerRegistry>();
-            mockRegistry.Setup(r => r.FindHandler(It.IsAny<string>()))
-                .Returns<string>(path => path.EndsWith(".testcontainer", StringComparison.OrdinalIgnoreCase) ? _mockContainerHandler.Object : null);
-
             // Use a dedicated orchestrator that treats deduplication as path-sensitive for this test.
             // This test asserts that two top-level containers with identical bytes but different names
             // are both unpacked.
@@ -355,7 +347,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             services.AddSingleton(_mockSignatureCalculator.Object);
             services.AddSingleton(_mockSigningProvider.Object);
             services.AddSingleton<IFileDeduplicator>(new PathSensitiveFileDeduplicator());
-            services.AddSingleton(mockRegistry.Object);
+            services.AddSingleton<IContainerHandler>(_mockContainerHandler.Object);
             services.AddSingleton(Mock.Of<ILogger<Implementation.RecursiveSigning>>());
 
             using var sp = services.BuildServiceProvider();
@@ -565,23 +557,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         }
 
         [Fact]
-        public async Task ContainerHandlerRegistry_ShouldFindCorrectHandler()
+        public void ContainerHandlers_ShouldBeResolvableViaDI()
         {
-            // Arrange
-            var registry = _serviceProvider.GetRequiredService<IContainerHandlerRegistry>();
+            // Arrange & Act
+            var handlers = _serviceProvider.GetServices<IContainerHandler>().ToList();
 
-            // Act
-            var handler = registry.FindHandler("test.testcontainer");
-
-            // Assert
-            handler.Should().NotBeNull();
-            handler.Should().BeSameAs(_mockContainerHandler.Object);
-            
-            // Verify the mock's CanHandle method would return true
-            _mockContainerHandler.Setup(h => h.CanHandle("test.testcontainer")).Returns(true);
-            handler!.CanHandle("test.testcontainer").Should().BeTrue();
-            
-            await Task.CompletedTask;
+            // Assert — the mock handler was registered as IContainerHandler
+            handlers.Should().ContainSingle();
+            handlers[0].Should().BeSameAs(_mockContainerHandler.Object);
         }
 
         private async IAsyncEnumerable<ContainerEntry> ReadOuterContainerEntriesAsync()

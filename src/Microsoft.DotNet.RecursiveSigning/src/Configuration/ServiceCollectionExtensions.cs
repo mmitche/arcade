@@ -5,6 +5,7 @@ using System;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.DotNet.RecursiveSigning.Abstractions;
 using Microsoft.DotNet.RecursiveSigning.Implementation;
+using Microsoft.DotNet.RecursiveSigning.Models;
 
 namespace Microsoft.DotNet.RecursiveSigning.Configuration
 {
@@ -14,12 +15,31 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
     public static class ServiceCollectionExtensions
     {
         /// <summary>
-        /// Add RecursiveSigning core services.
-        /// Consumers must also register:
-        /// - IFileAnalyzer
-        /// - ICertificateCalculator  
-        /// - ISigningProvider
-        /// - IContainerHandler implementations (optional)
+        /// Add all default RecursiveSigning services including core orchestration,
+        /// file/type analyzers, and container handlers.
+        /// Consumers must still register:
+        /// - ICertificateCalculator (or call <see cref="AddDefaultCertificateCalculator"/>)
+        /// - ISigningProvider (or call <see cref="AddDryRunSigningProvider"/>)
+        /// </summary>
+        public static IServiceCollection AddDefaultRecursiveSigning(this IServiceCollection services)
+        {
+            if (services == null)
+            {
+                throw new ArgumentNullException(nameof(services));
+            }
+
+            services.AddRecursiveSigning();
+            services.AddDefaultFileAnalyzers();
+            services.AddDefaultContainerHandlers();
+
+            return services;
+        }
+
+        /// <summary>
+        /// Add RecursiveSigning core orchestration services only.
+        /// Use <see cref="AddDefaultRecursiveSigning"/> for a batteries-included setup,
+        /// or call this with <see cref="AddDefaultFileAnalyzers"/> and
+        /// <see cref="AddDefaultContainerHandlers"/> individually for more control.
         /// </summary>
         public static IServiceCollection AddRecursiveSigning(this IServiceCollection services)
         {
@@ -28,32 +48,49 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
                 throw new ArgumentNullException(nameof(services));
             }
 
-            // Core orchestration services
             services.AddSingleton<IFileSystem, FileSystem>();
+            services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
             services.AddTransient<IRecursiveSigning, Implementation.RecursiveSigning>();
-
-            // Built-in file type analyzers (used by DefaultFileAnalyzer to detect
-            // Authenticode signatures, PE metadata, etc.)
-            services.AddSingleton<IFileTypeAnalyzer, PEFileTypeAnalyzer>();
-            services.AddSingleton<IContainerHandlerRegistry>(sp =>
-            {
-                var registry = new ContainerHandlerRegistry();
-                
-                // Register all IContainerHandler implementations with the registry
-                var handlers = sp.GetServices<IContainerHandler>();
-                foreach (var handler in handlers)
-                {
-                    registry.RegisterHandler(handler);
-                }
-                
-                return registry;
-            });
 
             return services;
         }
 
         /// <summary>
-        /// Add a container handler to the registry.
+        /// Register the default file analyzer (<see cref="DefaultFileAnalyzer"/>) and
+        /// built-in file type analyzers (e.g. <see cref="PEFileTypeAnalyzer"/>).
+        /// </summary>
+        public static IServiceCollection AddDefaultFileAnalyzers(this IServiceCollection services)
+        {
+            if (services == null)
+            {
+                throw new ArgumentNullException(nameof(services));
+            }
+
+            services.AddSingleton<IFileTypeAnalyzer, PEFileTypeAnalyzer>();
+            services.AddSingleton<IFileAnalyzer, DefaultFileAnalyzer>();
+
+            return services;
+        }
+
+        /// <summary>
+        /// Register the default container handlers (e.g. <see cref="ZipContainerHandler"/>
+        /// for .nupkg, .zip, .vsix).
+        /// </summary>
+        public static IServiceCollection AddDefaultContainerHandlers(this IServiceCollection services)
+        {
+            if (services == null)
+            {
+                throw new ArgumentNullException(nameof(services));
+            }
+
+            services.AddContainerHandler<ZipContainerHandler>();
+
+            return services;
+        }
+
+        /// <summary>
+        /// Register a container handler. The orchestrator receives all registered
+        /// <see cref="IContainerHandler"/> instances via <c>IEnumerable&lt;IContainerHandler&gt;</c>.
         /// </summary>
         public static IServiceCollection AddContainerHandler<THandler>(this IServiceCollection services)
             where THandler : class, IContainerHandler
@@ -63,12 +100,47 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
                 throw new ArgumentNullException(nameof(services));
             }
 
-            // Register the handler as IContainerHandler
-            // The registry will pick it up when it's created
             services.AddSingleton<IContainerHandler, THandler>();
+
+            return services;
+        }
+
+        /// <summary>
+        /// Register <see cref="DefaultCertificateCalculator"/> with the supplied certificate rules.
+        /// </summary>
+        public static IServiceCollection AddDefaultCertificateCalculator(
+            this IServiceCollection services,
+            DefaultCertificateRules rules)
+        {
+            if (services == null)
+            {
+                throw new ArgumentNullException(nameof(services));
+            }
+
+            if (rules == null)
+            {
+                throw new ArgumentNullException(nameof(rules));
+            }
+
+            services.AddSingleton<ICertificateCalculator>(_ => new DefaultCertificateCalculator(rules));
+
+            return services;
+        }
+
+        /// <summary>
+        /// Register <see cref="DryRunSigningProvider"/> as the signing provider.
+        /// Files are not actually signed; the provider logs what would have been signed.
+        /// </summary>
+        public static IServiceCollection AddDryRunSigningProvider(this IServiceCollection services)
+        {
+            if (services == null)
+            {
+                throw new ArgumentNullException(nameof(services));
+            }
+
+            services.AddSingleton<ISigningProvider, DryRunSigningProvider>();
 
             return services;
         }
     }
 }
-

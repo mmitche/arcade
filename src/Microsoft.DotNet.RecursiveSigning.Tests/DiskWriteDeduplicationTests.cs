@@ -59,12 +59,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             // Add test-specific services
             var stubHandler = new StubContainerHandler();
-            var registry = new ContainerHandlerRegistry();
-            registry.RegisterHandler(stubHandler);
-            
-            var stubAnalyzer = new StubFileAnalyzer(registry, _fileSystem);
+
+            var stubAnalyzer = new StubFileAnalyzer(new[] { stubHandler }, _fileSystem);
             services.AddSingleton<IFileAnalyzer>(stubAnalyzer);
-            services.AddSingleton<IContainerHandlerRegistry>(registry);
+            services.AddSingleton<IContainerHandler>(stubHandler);
             services.AddSingleton(stubHandler);
             
             // Add signature calculator

@@ -226,10 +226,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
 
             var services = new ServiceCollection();
             services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(verbose ? LogLevel.Debug : LogLevel.Information));
-            services.AddRecursiveSigning();
-            services.AddContainerHandler<ZipContainerHandler>();
-            services.AddSingleton<IFileAnalyzer, DefaultFileAnalyzer>();
-            services.AddSingleton<ICertificateCalculator>(_ => new DefaultCertificateCalculator(rules));
+            services.AddDefaultRecursiveSigning();
+            services.AddDefaultCertificateCalculator(rules);
 
             if (useESRP && useESRPClient)
             {
@@ -274,7 +272,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                     EncryptionKeyPath = Environment.GetEnvironmentVariable("ESRP_ENCRYPTION_KEY_PATH") ?? "",
                 };
                 services.AddSingleton(esrpConfig);
-                services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
                 services.AddSingleton<ISigningProvider, ESRPCliSigningProvider>();
             }
             else if (useESRPClient)
@@ -291,12 +288,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
                     TenantId = esrpTenantId,
                 };
                 services.AddSingleton(esrpClientConfig);
-                services.AddSingleton<IProcessRunner, DefaultProcessRunner>();
                 services.AddSingleton<ISigningProvider, ESRPClientExeSigningProvider>();
             }
             else
             {
-                services.AddSingleton<ISigningProvider, DryRunSigningProvider>();
+                services.AddDryRunSigningProvider();
             }
 
             using var provider = services.BuildServiceProvider();
