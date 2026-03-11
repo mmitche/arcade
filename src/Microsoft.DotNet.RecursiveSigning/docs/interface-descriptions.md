@@ -26,6 +26,7 @@ Each interface exposes a narrowly scoped contract so that new implementations ca
 ## IFileAnalyzer
 - Inspects files to gather metadata needed for signing decisions (hashes, strong-name info, executable type, etc.).
 - Detects whether a file is already signed and whether it contains nested content (this is an intrinsic property of the file as observed on disk).
+- Determines whether a file can physically be signed (`CanBeSigned` on `IFileMetadata`). Files that are zero-length, have invalid headers, or use unsupported formats are marked as unsignable.
 - Produces immutable metadata objects consumed by downstream components.
 
 ## ICertificateCalculator

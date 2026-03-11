@@ -61,7 +61,11 @@ Additionally, a **non-signable container** with **no signable children** is trea
 
 ## Signability model
 
-A node is considered **signable** when it has a non-null certificate identifier (i.e., `node.CertificateIdentifier != null`).
+A node is considered **signable** when:
+1. Its metadata indicates it can physically be signed (`node.Metadata.CanBeSigned == true`), AND
+2. It has a non-null certificate identifier (`node.CertificateIdentifier != null`).
+
+Files that cannot physically be signed (zero-length files, PEs with unsupported COFF machine types, corrupt binaries) have `CanBeSigned == false` and are always `Skipped` regardless of certificate assignment.
 
 The graph distinguishes between:
 
@@ -132,6 +136,9 @@ Completes graph discovery and computes initial execution states.
    - The node's *initial execution state*, which may be one of: `Skipped`, `PendingSigning`, `PendingRepack`, `ReadyToSign`, `ReadyToRepack`.
 
 Initial state rules:
+
+- All nodes
+  - If `CanBeSigned == false`: `Skipped` (file cannot physically be signed)
 
 - Leaf nodes
   - If not signable: `Skipped`

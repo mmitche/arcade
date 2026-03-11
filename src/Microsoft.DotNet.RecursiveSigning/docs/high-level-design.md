@@ -38,7 +38,8 @@ Microsoft.DotNet.RecursiveSigning orchestrates recursive signing of artifacts so
    - Failures halt the run before any signing occurs.
 5. **Graph finalization (bottom-up)**
    - Once discovery is complete, the graph is finalized by processing nodes in a children-first order.
-   - Each node's initial execution state is computed directly (for example, leaf signable nodes start as `ReadyToSign`).
+   - Files that cannot physically be signed (`CanBeSigned == false`) — for example, zero-length files or PE binaries with unsupported COFF machine types — are initialized to `Skipped`.
+   - Each remaining node's initial execution state is computed directly (for example, leaf signable nodes start as `ReadyToSign`).
    - Containers compute signable-child progress during this same pass, which determines whether they start as `PendingRepack` or `ReadyToRepack`.
    - Containers that are already signed may be initialized to `Skipped` *only when no descendant will be modified*; this prevents skipping a container that must be repacked because a nested file was signed.
 6. **Iterative Signing + Repack rounds**

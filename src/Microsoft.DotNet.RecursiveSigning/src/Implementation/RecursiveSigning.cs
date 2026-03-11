@@ -799,7 +799,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     return await analyzer.AnalyzeAsync(filePath, cancellationToken);
                 }
             }
-            return new FileMetadata(fileName);
+
+            // No analyzer matched. Zero-length files cannot be signed.
+            bool canBeSigned = _fileSystem.GetFileLength(filePath) > 0;
+            return new FileMetadata(fileName, canBeSigned: canBeSigned);
         }
 
         /// <summary>
@@ -815,7 +818,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     return await analyzer.AnalyzeAsync(contentStream, fileName, cancellationToken);
                 }
             }
-            return new FileMetadata(fileName);
+
+            // No analyzer matched. Zero-length streams cannot be signed.
+            bool canBeSigned = contentStream.Length > 0;
+            return new FileMetadata(fileName, canBeSigned: canBeSigned);
         }
 
         /// <summary>

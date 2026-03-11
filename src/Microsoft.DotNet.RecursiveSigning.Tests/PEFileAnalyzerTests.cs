@@ -53,6 +53,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             info.ExecutableType.Should().Be(ExecutableType.PE);
             info.IsAlreadySigned.Should().BeFalse();
+            info.CanBeSigned.Should().BeTrue();
         }
 
         [Fact]
@@ -65,12 +66,13 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             info.ExecutableType.Should().Be(ExecutableType.PE);
             info.IsAlreadySigned.Should().BeFalse();
+            info.CanBeSigned.Should().BeTrue();
         }
 
         // ── Analyze: not a PE ───────────────────────────────────────────────
 
         [Fact]
-        public async Task AnalyzeAsync_NotAPE_ReturnsDefault()
+        public async Task AnalyzeAsync_NotAPE_ReturnsUnsignable()
         {
             // Random bytes that aren't a valid PE
             var garbage = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05 };
@@ -80,17 +82,20 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             info.ExecutableType.Should().Be(ExecutableType.None);
             info.IsAlreadySigned.Should().BeFalse();
+            info.CanBeSigned.Should().BeFalse();
         }
 
         [Fact]
-        public async Task AnalyzeAsync_EmptyStream_ReturnsDefault()
+        public async Task AnalyzeAsync_EmptyStream_ReturnsUnsignable()
         {
             using var stream = new MemoryStream(Array.Empty<byte>());
 
             var info = await _analyzer.AnalyzeAsync(stream, "empty.dll");
 
+            // Base class catches 0-length before PE analysis.
             info.ExecutableType.Should().Be(ExecutableType.None);
             info.IsAlreadySigned.Should().BeFalse();
+            info.CanBeSigned.Should().BeFalse();
         }
 
         // ── Analyze: signed PE (synthetic) ──────────────────────────────────
@@ -106,6 +111,40 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             info.ExecutableType.Should().Be(ExecutableType.PE);
             info.IsAlreadySigned.Should().BeTrue();
+            info.CanBeSigned.Should().BeTrue();
+        }
+
+        // ── Analyze: unsupported machine type ───────────────────────────────
+
+        [Theory]
+        [InlineData(0xFD1D)] // linux-x64 R2R
+        [InlineData(0xD11D)] // linux-arm64 R2R
+        [InlineData(0x0000)] // unknown
+        public async Task AnalyzeAsync_UnsupportedMachineType_ReturnsUnsignable(ushort machineType)
+        {
+            var pe = BuildPEWithMachineType(machineType);
+            using var stream = new MemoryStream(pe);
+
+            var info = await _analyzer.AnalyzeAsync(stream, "crossgen.dll");
+
+            info.ExecutableType.Should().Be(ExecutableType.PE);
+            info.CanBeSigned.Should().BeFalse();
+        }
+
+        [Theory]
+        [InlineData(0x014C)] // x86 / AnyCPU IL-only
+        [InlineData(0x8664)] // x64
+        [InlineData(0xAA64)] // ARM64
+        [InlineData(0x01C4)] // ARM Thumb-2
+        public async Task AnalyzeAsync_SupportedMachineType_ReturnsSignable(ushort machineType)
+        {
+            var pe = BuildPEWithMachineType(machineType);
+            using var stream = new MemoryStream(pe);
+
+            var info = await _analyzer.AnalyzeAsync(stream, "valid.dll");
+
+            info.ExecutableType.Should().Be(ExecutableType.PE);
+            info.CanBeSigned.Should().BeTrue();
         }
 
         // ── DI integration ───────────────────────────────────────────────────
@@ -143,6 +182,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             metadata.ExecutableType.Should().Be(ExecutableType.PE);
             metadata.IsAlreadySigned.Should().BeFalse();
+            metadata.CanBeSigned.Should().BeTrue();
         }
 
         // ── Helpers ─────────────────────────────────────────────────────────
@@ -174,6 +214,25 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             // Patch: set RVA to end of file and Size to certSize
             BitConverter.GetBytes((uint)(pe.Length)).CopyTo(pe, certRvaOffset);
             BitConverter.GetBytes((uint)certSize).CopyTo(pe, certSizeOffset);
+
+            return pe;
+        }
+
+        /// <summary>
+        /// Builds a PE binary with a specific COFF Machine type by copying the
+        /// test assembly and patching the Machine field in the COFF header.
+        /// </summary>
+        private static byte[] BuildPEWithMachineType(ushort machineType)
+        {
+            var testAssemblyPath = typeof(PEFileAnalyzerTests).Assembly.Location;
+            var pe = File.ReadAllBytes(testAssemblyPath);
+
+            // DOS header: e_lfanew at offset 0x3C → PE signature offset
+            int peSignatureOffset = BitConverter.ToInt32(pe, 0x3C);
+            // Machine field is the first 2 bytes of the COFF header (immediately after PE\0\0)
+            int machineOffset = peSignatureOffset + 4;
+
+            BitConverter.GetBytes(machineType).CopyTo(pe, machineOffset);
 
             return pe;
         }

@@ -26,5 +26,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         /// This is independent of whether the signing policy requires signing for this file.
         /// </summary>
         bool IsAlreadySigned { get; }
+
+        /// <summary>
+        /// Indicates whether the file can physically be signed.
+        /// False for files that signing tools cannot process, such as zero-length files
+        /// or PE binaries with unsupported COFF machine types.
+        /// </summary>
+        bool CanBeSigned { get; }
     }
 }

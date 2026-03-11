@@ -4,6 +4,7 @@
 #nullable enable
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection.PortableExecutable;
@@ -18,10 +19,25 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
     /// Analyzes PE (Portable Executable) files — .dll, .exe, .sys, etc.
     /// Detects Authenticode signatures by inspecting the PE header's
     /// CertificateTableDirectory entry, matching the approach from SignTool.
+    /// Validates that the COFF Machine type is one that AuthentiCode signing
+    /// tools can process — .NET crossgen2 produces R2R assemblies with
+    /// non-standard Machine types (e.g. 0xFD1D for linux-x64) that SignTool
+    /// rejects with ERROR_BAD_EXE_FORMAT.
     /// </summary>
     public sealed class PEFileAnalyzer : IFileAnalyzer
     {
         private static readonly string[] s_peExtensions = { ".dll", ".exe", ".sys", ".ocx" };
+
+        /// <summary>
+        /// PE Machine types that AuthentiCode signing tools (SignTool) can process.
+        /// </summary>
+        private static readonly HashSet<ushort> s_signableMachineTypes =
+        [
+            0x014C, // IMAGE_FILE_MACHINE_I386 (x86, also AnyCPU IL-only)
+            0x01C4, // IMAGE_FILE_MACHINE_ARMNT (ARM Thumb-2)
+            0x8664, // IMAGE_FILE_MACHINE_AMD64 (x64)
+            0xAA64, // IMAGE_FILE_MACHINE_ARM64
+        ];
 
         public bool CanAnalyze(string fileName)
         {
@@ -59,7 +75,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 using var ms = new MemoryStream();
                 await contentStream.CopyToAsync(ms, cancellationToken);
                 ms.Position = 0;
-                return AnalyzeCore(ms, fileName);
+                return AnalyzePE(ms, fileName);
             }
 
             return Analyze(contentStream, fileName);
@@ -75,7 +91,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             try
             {
                 stream.Position = 0;
-                return AnalyzeCore(stream, fileName ?? string.Empty);
+                return AnalyzePE(stream, fileName ?? string.Empty);
             }
             finally
             {
@@ -83,7 +99,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             }
         }
 
-        private static FileMetadata AnalyzeCore(Stream stream, string fileName)
+        private static FileMetadata AnalyzePE(Stream stream, string fileName)
         {
             try
             {
@@ -92,7 +108,17 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
                 if (peReader.PEHeaders?.PEHeader == null)
                 {
-                    return new FileMetadata(fileName);
+                    return new FileMetadata(fileName, canBeSigned: false);
+                }
+
+                // Validate the COFF Machine type is one that signing tools support.
+                ushort machine = (ushort)peReader.PEHeaders.CoffHeader.Machine;
+                if (!s_signableMachineTypes.Contains(machine))
+                {
+                    return new FileMetadata(
+                        fileName: fileName,
+                        executableType: ExecutableType.PE,
+                        canBeSigned: false);
                 }
 
                 // Authenticode signature check: the CertificateTableDirectory in the
@@ -109,7 +135,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             catch (BadImageFormatException)
             {
                 // Not a valid PE file despite having a PE extension.
-                return new FileMetadata(fileName);
+                // This also handles zero-length streams.
+                return new FileMetadata(fileName, canBeSigned: false);
             }
         }
     }

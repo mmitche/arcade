@@ -22,23 +22,27 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
 
         public bool IsAlreadySigned { get; }
 
+        public bool CanBeSigned { get; }
+
         public FileMetadata(
             string fileName,
             ExecutableType executableType = ExecutableType.None,
             string? targetFramework = null,
             string? publicKeyToken = null,
-            bool isAlreadySigned = false)
+            bool isAlreadySigned = false,
+            bool canBeSigned = true)
         {
             FileName = fileName ?? throw new ArgumentNullException(nameof(fileName));
             ExecutableType = executableType;
             TargetFramework = targetFramework;
             PublicKeyToken = publicKeyToken;
             IsAlreadySigned = isAlreadySigned;
+            CanBeSigned = canBeSigned;
         }
 
         public override string ToString()
         {
-            return $"{ExecutableType}, TFM: {TargetFramework ?? "<none>"}, PKT: {PublicKeyToken ?? "<none>"}, AlreadySigned: {IsAlreadySigned}";
+            return $"{ExecutableType}, TFM: {TargetFramework ?? "<none>"}, PKT: {PublicKeyToken ?? "<none>"}, AlreadySigned: {IsAlreadySigned}, CanBeSigned: {CanBeSigned}";
         }
     }
 }

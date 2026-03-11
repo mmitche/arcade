@@ -52,6 +52,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 return FileNodeState.PendingRepack;
             }
 
+            // Files that physically cannot be signed are always skipped.
+            if (!node.Metadata.CanBeSigned)
+            {
+                return FileNodeState.Skipped;
+            }
+
             // Otherwise, all children are complete or there are no children.
             if (node.CertificateIdentifier != null)
             {

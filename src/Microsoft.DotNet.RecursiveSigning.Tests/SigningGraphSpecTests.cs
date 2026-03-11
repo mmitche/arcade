@@ -33,12 +33,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             return CreateNode(fileName, certificateIdentifier, isAlreadySigned: false);
         }
 
-        private static FileNode CreateNode(string fileName, ICertificateIdentifier? certificateIdentifier, bool isAlreadySigned)
+        private static FileNode CreateNode(string fileName, ICertificateIdentifier? certificateIdentifier, bool isAlreadySigned, bool canBeSigned = true)
         {
             byte[] bytes = Guid.NewGuid().ToByteArray();
             var contentKey = new FileContentKey(new ContentHash(ImmutableArray.Create(bytes)), fileName);
             var location = new FileLocation("/test/" + fileName, RelativePathInContainer: null);
-            var metadata = Mock.Of<IFileMetadata>(m => m.IsAlreadySigned == isAlreadySigned);
+            var metadata = Mock.Of<IFileMetadata>(m => m.IsAlreadySigned == isAlreadySigned && m.CanBeSigned == canBeSigned);
             return new FileNode(contentKey, location, metadata, certificateIdentifier);
         }
 
@@ -61,6 +61,28 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             node.State.Should().Be(FileNodeState.Skipped);
             g.GetNodesReadyForSigning().Should().BeEmpty();
+        }
+
+        [Fact]
+        public void AddNode_Skips_WhenCanBeSignedIsFalse()
+        {
+            var node = CreateNode("bad.dll", Signable(), isAlreadySigned: false, canBeSigned: false);
+
+            var g = BuildGraph((node, null));
+
+            node.State.Should().Be(FileNodeState.Skipped);
+            g.GetNodesReadyForSigning().Should().BeEmpty();
+        }
+
+        [Fact]
+        public void AddNode_ReadyToSign_WhenCanBeSignedIsTrue()
+        {
+            var node = CreateNode("good.dll", Signable(), isAlreadySigned: false, canBeSigned: true);
+
+            var g = BuildGraph((node, null));
+
+            node.State.Should().Be(FileNodeState.ReadyToSign);
+            g.GetNodesReadyForSigning().Should().ContainSingle().Which.Should().BeSameAs(node);
         }
 
         [Fact]
