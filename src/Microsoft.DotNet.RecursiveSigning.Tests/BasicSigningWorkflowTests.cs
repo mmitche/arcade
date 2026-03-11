@@ -81,7 +81,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             
             // Replace default services with mocks
             services.AddSingleton<IFileSystem>(_mockFileSystem);
-            services.AddSingleton(_mockFileAnalyzer.Object);
+            services.AddSingleton<IFileAnalyzer>(_mockFileAnalyzer.Object);
             services.AddSingleton(_mockSignatureCalculator.Object);
             services.AddSingleton(_mockSigningProvider.Object);
 
@@ -144,7 +144,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             services.AddRecursiveSigning();
 
             services.AddSingleton<IFileSystem>(_mockFileSystem);
-            services.AddSingleton(_mockFileAnalyzer.Object);
+            services.AddSingleton<IFileAnalyzer>(_mockFileAnalyzer.Object);
             services.AddSingleton(_mockSignatureCalculator.Object);
             services.AddSingleton(_mockSigningProvider.Object);
             services.AddSingleton<IContainerHandler>(badHandler.Object);
@@ -344,7 +344,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var services = new ServiceCollection();
             services.AddRecursiveSigning();
             services.AddSingleton<IFileSystem>(_mockFileSystem);
-            services.AddSingleton(_mockFileAnalyzer.Object);
+            services.AddSingleton<IFileAnalyzer>(_mockFileAnalyzer.Object);
             services.AddSingleton(_mockSignatureCalculator.Object);
             services.AddSingleton(_mockSigningProvider.Object);
             services.AddSingleton<IFileDeduplicator>(new PathSensitiveFileDeduplicator());
@@ -697,6 +697,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
         private void SetupDefaultMockBehaviors()
         {
+            // Setup FileAnalyzer mock — CanAnalyze returns true so the mock
+            // is selected by the orchestrator's dispatch loop.
+            _mockFileAnalyzer.Setup(a => a.CanAnalyze(It.IsAny<string>()))
+                .Returns(true);
+
             // Setup FileAnalyzer mock
             _mockFileAnalyzer.Setup(a => a.AnalyzeAsync(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
                 .ReturnsAsync((string path, System.Threading.CancellationToken ct) =>
@@ -888,6 +893,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             // Override: make the second file already signed so it gets skipped
             _mockFileAnalyzer.Reset();
+            _mockFileAnalyzer.Setup(a => a.CanAnalyze(It.IsAny<string>()))
+                .Returns(true);
             _mockFileAnalyzer.Setup(a => a.AnalyzeAsync(It.IsAny<string>(), It.IsAny<System.Threading.CancellationToken>()))
                 .ReturnsAsync((string path, System.Threading.CancellationToken ct) =>
                 {

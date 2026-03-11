@@ -5,6 +5,7 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using AwesomeAssertions;
 using Microsoft.DotNet.RecursiveSigning.Abstractions;
@@ -16,9 +17,9 @@ using Xunit;
 
 namespace Microsoft.DotNet.RecursiveSigning.Tests
 {
-    public class PEFileTypeAnalyzerTests
+    public class PEFileAnalyzerTests
     {
-        private readonly PEFileTypeAnalyzer _analyzer = new();
+        private readonly PEFileAnalyzer _analyzer = new();
 
         // ── CanAnalyze ──────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         {
             // Use the test assembly itself — it is a valid PE but should not
             // have an Authenticode signature (it's a test build, not signed).
-            var testAssemblyPath = typeof(PEFileTypeAnalyzerTests).Assembly.Location;
+            var testAssemblyPath = typeof(PEFileAnalyzerTests).Assembly.Location;
             using var stream = new FileStream(testAssemblyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
             var info = await _analyzer.AnalyzeAsync(stream, "test.dll");
@@ -57,10 +58,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         [Fact]
         public void Analyze_Static_UnsignedPE_DetectsPEAndNotSigned()
         {
-            var testAssemblyPath = typeof(PEFileTypeAnalyzerTests).Assembly.Location;
+            var testAssemblyPath = typeof(PEFileAnalyzerTests).Assembly.Location;
             using var stream = new FileStream(testAssemblyPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
-            var info = PEFileTypeAnalyzer.Analyze(stream);
+            var info = PEFileAnalyzer.Analyze(stream);
 
             info.ExecutableType.Should().Be(ExecutableType.PE);
             info.IsAlreadySigned.Should().BeFalse();
@@ -107,54 +108,22 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             info.IsAlreadySigned.Should().BeTrue();
         }
 
-        // ── DefaultFileAnalyzer integration ─────────────────────────────────
+        // ── DI integration ───────────────────────────────────────────────────
 
         [Fact]
-        public async Task DefaultFileAnalyzer_WithPEAnalyzer_DetectsPE()
+        public async Task PEFileAnalyzer_ResolvedViaDI_DetectsSignedPE()
         {
-            var analyzer = new DefaultFileAnalyzer(new[] { new PEFileTypeAnalyzer() });
-            var testAssemblyPath = typeof(PEFileTypeAnalyzerTests).Assembly.Location;
-
-            var metadata = await analyzer.AnalyzeAsync(testAssemblyPath);
-
-            metadata.ExecutableType.Should().Be(ExecutableType.PE);
-            metadata.IsAlreadySigned.Should().BeFalse();
-        }
-
-        [Fact]
-        public async Task DefaultFileAnalyzer_NoMatchingAnalyzer_ReturnsBasicMetadata()
-        {
-            var analyzer = new DefaultFileAnalyzer(new[] { new PEFileTypeAnalyzer() });
-            var stream = new MemoryStream(new byte[] { 0x50, 0x4B }); // PK header (zip-like)
-
-            var metadata = await analyzer.AnalyzeAsync(stream, "package.nupkg");
-
-            metadata.FileName.Should().Be("package.nupkg");
-            metadata.ExecutableType.Should().Be(ExecutableType.None);
-            metadata.IsAlreadySigned.Should().BeFalse();
-        }
-
-        [Fact]
-        public async Task DefaultFileAnalyzer_NullAnalyzers_StillWorks()
-        {
-            var analyzer = new DefaultFileAnalyzer();
-
-            var metadata = await analyzer.AnalyzeAsync(new MemoryStream(new byte[1]), "test.dll");
-
-            metadata.FileName.Should().Be("test.dll");
-            metadata.ExecutableType.Should().Be(ExecutableType.None);
-        }
-
-        [Fact]
-        public async Task DefaultFileAnalyzer_ResolvedViaDI_DetectsSignedPE()
-        {
-            // Verify that AddDefaultFileAnalyzers registers PEFileTypeAnalyzer so that
-            // DefaultFileAnalyzer can detect Authenticode signatures on PE files.
+            // Verify that AddDefaultFileAnalyzers registers PEFileAnalyzer
+            // as IFileAnalyzer so it is available via IEnumerable<IFileAnalyzer>.
             var services = new ServiceCollection();
             services.AddDefaultFileAnalyzers();
             using var provider = services.BuildServiceProvider();
 
-            var analyzer = provider.GetRequiredService<IFileAnalyzer>();
+            var analyzers = provider.GetServices<IFileAnalyzer>().ToList();
+            analyzers.Should().ContainSingle()
+                .Which.Should().BeOfType<PEFileAnalyzer>();
+
+            var analyzer = analyzers[0];
 
             // Synthetic signed PE
             var pe = BuildMinimalPEWithCertificateTable(certSize: 8);
@@ -162,7 +131,18 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             var metadata = await analyzer.AnalyzeAsync(stream, "signed.dll");
 
             metadata.ExecutableType.Should().Be(ExecutableType.PE);
-            metadata.IsAlreadySigned.Should().BeTrue("AddDefaultFileAnalyzers must register PEFileTypeAnalyzer");
+            metadata.IsAlreadySigned.Should().BeTrue("AddDefaultFileAnalyzers must register PEFileAnalyzer");
+        }
+
+        [Fact]
+        public async Task PEFileAnalyzer_ViaFilePath_DetectsPE()
+        {
+            var testAssemblyPath = typeof(PEFileAnalyzerTests).Assembly.Location;
+
+            var metadata = await _analyzer.AnalyzeAsync(testAssemblyPath);
+
+            metadata.ExecutableType.Should().Be(ExecutableType.PE);
+            metadata.IsAlreadySigned.Should().BeFalse();
         }
 
         // ── Helpers ─────────────────────────────────────────────────────────
@@ -174,7 +154,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
         /// </summary>
         private static byte[] BuildMinimalPEWithCertificateTable(int certSize)
         {
-            var testAssemblyPath = typeof(PEFileTypeAnalyzerTests).Assembly.Location;
+            var testAssemblyPath = typeof(PEFileAnalyzerTests).Assembly.Location;
             var pe = File.ReadAllBytes(testAssemblyPath);
 
             // Parse the PE to find the offset of the data directory array.

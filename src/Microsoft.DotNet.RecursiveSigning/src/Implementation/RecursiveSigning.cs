@@ -23,7 +23,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
     public sealed class RecursiveSigning : IRecursiveSigning
     {
         private readonly IFileSystem _fileSystem;
-        private readonly IFileAnalyzer _fileAnalyzer;
+        private readonly IReadOnlyList<IFileAnalyzer> _fileAnalyzers;
         private readonly ICertificateCalculator _signatureCalculator;
         private readonly IReadOnlyList<IContainerHandler> _containerHandlers;
         private readonly ISigningProvider _signingProvider;
@@ -35,7 +35,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
         public RecursiveSigning(
             IFileSystem fileSystem,
-            IFileAnalyzer fileAnalyzer,
+            IEnumerable<IFileAnalyzer> fileAnalyzers,
             ICertificateCalculator signatureCalculator,
             IEnumerable<IContainerHandler> containerHandlers,
             ISigningProvider signingProvider,
@@ -43,7 +43,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             ILogger<RecursiveSigning> logger)
         {
             _fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
-            _fileAnalyzer = fileAnalyzer ?? throw new ArgumentNullException(nameof(fileAnalyzer));
+            _fileAnalyzers = (fileAnalyzers ?? throw new ArgumentNullException(nameof(fileAnalyzers))).ToList();
             _signatureCalculator = signatureCalculator ?? throw new ArgumentNullException(nameof(signatureCalculator));
             _containerHandlers = (containerHandlers ?? throw new ArgumentNullException(nameof(containerHandlers))).ToList();
             _signingProvider = signingProvider ?? throw new ArgumentNullException(nameof(signingProvider));
@@ -229,7 +229,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
             _fileDeduplicator.RegisterFile(contentKey, filePath);
 
-            var metadata = await _fileAnalyzer.AnalyzeAsync(filePath, cancellationToken);
+            var metadata = await AnalyzeFileAsync(filePath, cancellationToken);
 
             // First occurrence: delegate to DiscoverFileAsync for full analysis
             return await DiscoverFileAsync(contentKey, location, metadata, parentNode, tempDirectory, cancellationToken);
@@ -289,7 +289,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 return CreateReferenceNodeForContainer(contentKey, referenceLocation, parentNode);
             }
 
-            var metadata = await _fileAnalyzer.AnalyzeAsync(contentStream, fileName, cancellationToken);
+            var metadata = await AnalyzeFileAsync(contentStream, fileName, cancellationToken);
 
             // First occurrence: write stream to disk and register it
             string filePath = await WriteStreamToTempFileAsync(
@@ -783,6 +783,39 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 }
             }
             return match;
+        }
+
+        /// <summary>
+        /// Analyzes a file on disk using the first matching registered analyzer.
+        /// Falls back to basic filename-only metadata when no analyzer matches.
+        /// </summary>
+        private async Task<IFileMetadata> AnalyzeFileAsync(string filePath, CancellationToken cancellationToken)
+        {
+            string fileName = Path.GetFileName(filePath);
+            foreach (var analyzer in _fileAnalyzers)
+            {
+                if (analyzer.CanAnalyze(fileName))
+                {
+                    return await analyzer.AnalyzeAsync(filePath, cancellationToken);
+                }
+            }
+            return new FileMetadata(fileName);
+        }
+
+        /// <summary>
+        /// Analyzes a stream using the first matching registered analyzer.
+        /// Falls back to basic filename-only metadata when no analyzer matches.
+        /// </summary>
+        private async Task<IFileMetadata> AnalyzeFileAsync(Stream contentStream, string fileName, CancellationToken cancellationToken)
+        {
+            foreach (var analyzer in _fileAnalyzers)
+            {
+                if (analyzer.CanAnalyze(fileName))
+                {
+                    return await analyzer.AnalyzeAsync(contentStream, fileName, cancellationToken);
+                }
+            }
+            return new FileMetadata(fileName);
         }
 
         /// <summary>

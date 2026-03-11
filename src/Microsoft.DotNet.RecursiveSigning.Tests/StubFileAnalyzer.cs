@@ -28,6 +28,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             _fileSystem = fileSystem ?? new FileSystem();
         }
 
+        /// <summary>
+        /// The stub analyzer handles all files — it returns basic metadata for anything.
+        /// </summary>
+        public bool CanAnalyze(string fileName) => true;
+
         public async Task<IFileMetadata> AnalyzeAsync(string filePath, CancellationToken cancellationToken = default)
         {
             if (!_fileSystem.FileExists(filePath))

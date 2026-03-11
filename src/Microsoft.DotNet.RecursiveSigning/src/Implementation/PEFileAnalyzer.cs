@@ -19,7 +19,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
     /// Detects Authenticode signatures by inspecting the PE header's
     /// CertificateTableDirectory entry, matching the approach from SignTool.
     /// </summary>
-    public sealed class PEFileTypeAnalyzer : IFileTypeAnalyzer
+    public sealed class PEFileAnalyzer : IFileAnalyzer
     {
         private static readonly string[] s_peExtensions = { ".dll", ".exe", ".sys", ".ocx" };
 
@@ -29,32 +29,53 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             return s_peExtensions.Any(pe => ext.Equals(pe, StringComparison.OrdinalIgnoreCase));
         }
 
-        public async Task<FileTypeInfo> AnalyzeAsync(
-            Stream stream, string fileName, CancellationToken cancellationToken = default)
+        public async Task<IFileMetadata> AnalyzeAsync(string filePath, CancellationToken cancellationToken = default)
         {
-            if (!stream.CanSeek)
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                throw new ArgumentException("File path cannot be null or whitespace.", nameof(filePath));
+            }
+
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return await AnalyzeAsync(stream, Path.GetFileName(filePath), cancellationToken);
+        }
+
+        public async Task<IFileMetadata> AnalyzeAsync(
+            Stream contentStream, string fileName, CancellationToken cancellationToken = default)
+        {
+            if (contentStream == null)
+            {
+                throw new ArgumentNullException(nameof(contentStream));
+            }
+
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                throw new ArgumentException("File name cannot be null or whitespace.", nameof(fileName));
+            }
+
+            if (!contentStream.CanSeek)
             {
                 // PEReader needs a seekable stream; copy asynchronously.
                 using var ms = new MemoryStream();
-                await stream.CopyToAsync(ms, cancellationToken);
+                await contentStream.CopyToAsync(ms, cancellationToken);
                 ms.Position = 0;
-                return AnalyzeCore(ms);
+                return AnalyzeCore(ms, fileName);
             }
 
-            return Analyze(stream);
+            return Analyze(contentStream, fileName);
         }
 
         /// <summary>
         /// Synchronously analyzes a seekable PE stream. Separated for testability and
         /// because <see cref="PEReader"/> is not async.
         /// </summary>
-        internal static FileTypeInfo Analyze(Stream stream)
+        internal static IFileMetadata Analyze(Stream stream, string? fileName = null)
         {
             var originalPosition = stream.Position;
             try
             {
                 stream.Position = 0;
-                return AnalyzeCore(stream);
+                return AnalyzeCore(stream, fileName ?? string.Empty);
             }
             finally
             {
@@ -62,7 +83,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             }
         }
 
-        private static FileTypeInfo AnalyzeCore(Stream stream)
+        private static FileMetadata AnalyzeCore(Stream stream, string fileName)
         {
             try
             {
@@ -71,7 +92,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
                 if (peReader.PEHeaders?.PEHeader == null)
                 {
-                    return FileTypeInfo.Default;
+                    return new FileMetadata(fileName);
                 }
 
                 // Authenticode signature check: the CertificateTableDirectory in the
@@ -80,14 +101,15 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 var certDir = peReader.PEHeaders.PEHeader.CertificateTableDirectory;
                 bool isSigned = certDir.Size > 0;
 
-                return new FileTypeInfo(
+                return new FileMetadata(
+                    fileName: fileName,
                     executableType: ExecutableType.PE,
                     isAlreadySigned: isSigned);
             }
             catch (BadImageFormatException)
             {
                 // Not a valid PE file despite having a PE extension.
-                return FileTypeInfo.Default;
+                return new FileMetadata(fileName);
             }
         }
     }

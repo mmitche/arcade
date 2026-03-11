@@ -20,7 +20,7 @@ It is designed for local validation of calculator/rule behavior without invoking
 3. Configure DI with:
    - `AddRecursiveSigning()`
    - `ZipContainerHandler`
-   - `DefaultFileAnalyzer`
+   - `PEFileAnalyzer`
    - `DefaultCertificateCalculator`
    - `DryRunSigningProvider`
 4. Build a `SigningRequest` (including optional output directory) and invoke `IRecursiveSigning.SignAsync`.

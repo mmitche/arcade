@@ -16,7 +16,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
     {
         /// <summary>
         /// Add all default RecursiveSigning services including core orchestration,
-        /// file/type analyzers, and container handlers.
+        /// file analyzers, and container handlers.
         /// Consumers must still register:
         /// - ICertificateCalculator (or call <see cref="AddDefaultCertificateCalculator"/>)
         /// - ISigningProvider (or call <see cref="AddDryRunSigningProvider"/>)
@@ -57,8 +57,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
         }
 
         /// <summary>
-        /// Register the default file analyzer (<see cref="DefaultFileAnalyzer"/>) and
-        /// built-in file type analyzers (e.g. <see cref="PEFileTypeAnalyzer"/>).
+        /// Register the default file analyzers (e.g. <see cref="PEFileAnalyzer"/>).
+        /// Analyzers are registered as <c>IEnumerable&lt;IFileAnalyzer&gt;</c> and
+        /// dispatched by the orchestrator, matching the container handler pattern.
         /// </summary>
         public static IServiceCollection AddDefaultFileAnalyzers(this IServiceCollection services)
         {
@@ -67,8 +68,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Configuration
                 throw new ArgumentNullException(nameof(services));
             }
 
-            services.AddSingleton<IFileTypeAnalyzer, PEFileTypeAnalyzer>();
-            services.AddSingleton<IFileAnalyzer, DefaultFileAnalyzer>();
+            services.AddSingleton<IFileAnalyzer, PEFileAnalyzer>();
 
             return services;
         }

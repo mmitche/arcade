@@ -208,7 +208,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Warning));
             services.AddRecursiveSigning();
             services.AddContainerHandler<ZipContainerHandler>();
-            services.AddSingleton<IFileAnalyzer, DefaultFileAnalyzer>();
             services.AddSingleton<ISigningProvider, DryRunSigningProvider>();
 
             var rules = new DefaultCertificateRules(

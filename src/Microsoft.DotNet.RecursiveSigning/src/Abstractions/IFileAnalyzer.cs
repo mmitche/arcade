@@ -9,11 +9,19 @@ using Microsoft.DotNet.RecursiveSigning.Models;
 namespace Microsoft.DotNet.RecursiveSigning.Abstractions
 {
     /// <summary>
-    /// Analyzes files and extracts metadata.
-    /// Phase 1: Stub implementation (only hash + filename).
+    /// Analyzes files and extracts metadata needed for signing decisions.
+    /// Implementations may be type-specific (e.g. PE analysis) or composite
+    /// (dispatching to multiple child analyzers).
     /// </summary>
     public interface IFileAnalyzer
     {
+        /// <summary>
+        /// Returns true if this analyzer can handle the given file name
+        /// (typically by checking the extension). Composite analyzers
+        /// return true if any child analyzer can handle the file.
+        /// </summary>
+        bool CanAnalyze(string fileName);
+
         /// <summary>
         /// Analyze a file and extract metadata.
         /// </summary>
