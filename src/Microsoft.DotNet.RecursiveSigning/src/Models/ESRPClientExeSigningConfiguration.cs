@@ -42,7 +42,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         /// <summary>
         /// Max degree of parallelism for ESRP session.
         /// </summary>
-        public int MaxDegreeOfParallelism { get; set; } = 4;
+        public int MaxDegreeOfParallelism { get; set; } = -1;
 
     }
 }

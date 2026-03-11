@@ -9,13 +9,13 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
     public sealed class SigningOptions
     {
         /// <summary>
-        /// Maximum degree of parallelism for signing operations.
+        /// Maximum degree of parallelism for container repack operations.
         /// </summary>
-        public int MaxDegreeOfParallelism { get; }
+        public int MaxRepackParallelism { get; }
 
-        public SigningOptions(int maxDegreeOfParallelism = 1)
+        public SigningOptions(int maxRepackParallelism = 4)
         {
-            MaxDegreeOfParallelism = maxDegreeOfParallelism;
+            MaxRepackParallelism = maxRepackParallelism;
         }
     }
 }
