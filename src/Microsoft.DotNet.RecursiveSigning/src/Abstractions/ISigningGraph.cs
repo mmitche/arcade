@@ -55,6 +55,20 @@ namespace Microsoft.DotNet.RecursiveSigning.Abstractions
         IReadOnlyList<FileNodeBase> GetAllNodes();
 
         /// <summary>
+        /// Get all nodes that were signed (state is Complete), including reference nodes
+        /// whose canonical node was signed.
+        /// </summary>
+        /// <returns>All signed nodes (FileNode and ReferenceNode).</returns>
+        IReadOnlyList<FileNodeBase> GetSignedNodes();
+
+        /// <summary>
+        /// Get all nodes that were skipped (already signed, non-signable, or explicitly ignored),
+        /// including reference nodes whose canonical node was skipped.
+        /// </summary>
+        /// <returns>All skipped nodes (FileNode and ReferenceNode).</returns>
+        IReadOnlyList<FileNodeBase> GetSkippedNodes();
+
+        /// <summary>
         /// Check if all nodes are in a terminal state (signed or skipped).
         /// </summary>
         /// <returns>True if complete.</returns>

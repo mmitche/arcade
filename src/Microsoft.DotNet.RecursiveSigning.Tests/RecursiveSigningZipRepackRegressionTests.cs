@@ -47,8 +47,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
                 result.Success.Should().BeTrue();
                 result.Errors.Should().BeEmpty();
-                result.SignedFiles.Should().Contain(f => string.Equals(Path.GetFileName(f.FilePath), "sample.nupkg", StringComparison.OrdinalIgnoreCase));
-                result.SignedFiles.Should().NotContain(f => f.FilePath.Contains($"{Path.DirectorySeparatorChar}repacked{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+                var signedNodes = result.Graph!.GetSignedNodes().OfType<FileNode>().ToList();
+                signedNodes.Should().Contain(n => string.Equals(Path.GetFileName(n.Location.FilePathOnDisk!), "sample.nupkg", StringComparison.OrdinalIgnoreCase));
+                signedNodes.Should().NotContain(n => n.Location.FilePathOnDisk!.Contains($"{Path.DirectorySeparatorChar}repacked{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
 
                 ReadZipEntry(containerPath, "content/file.txt").Should().Contain("[DRY-RUN SIGNED with TestCert]");
             }
@@ -93,7 +94,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 File.Exists(outputPath).Should().BeTrue();
                 File.ReadAllText(filePath).Should().Be("payload");
                 File.ReadAllText(outputPath).Should().Contain("[DRY-RUN SIGNED with TestCert]");
-                result.SignedFiles.Should().Contain(f => string.Equals(f.FilePath, outputPath, StringComparison.OrdinalIgnoreCase));
+                result.FileResults.Should().Contain(f => string.Equals(f.OutputPath, outputPath, StringComparison.OrdinalIgnoreCase) && f.WasUpdated);
             }
             finally
             {
@@ -136,7 +137,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 File.Exists(outputPath).Should().BeTrue();
                 ReadZipEntry(containerPath, "content/file.txt").Should().Be("payload");
                 ReadZipEntry(outputPath, "content/file.txt").Should().Contain("[DRY-RUN SIGNED with TestCert]");
-                result.SignedFiles.Should().Contain(f => string.Equals(f.FilePath, outputPath, StringComparison.OrdinalIgnoreCase));
+                result.FileResults.Should().Contain(f => string.Equals(f.OutputPath, outputPath, StringComparison.OrdinalIgnoreCase) && f.WasUpdated);
             }
             finally
             {
@@ -189,8 +190,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
                 File.ReadAllText(fileB).Should().Be("B");
                 File.ReadAllText(outputA).Should().Contain("[DRY-RUN SIGNED with TestCert]");
                 File.ReadAllText(outputB).Should().Contain("[DRY-RUN SIGNED with TestCert]");
-                result.SignedFiles.Should().Contain(f => string.Equals(f.FilePath, outputA, StringComparison.OrdinalIgnoreCase));
-                result.SignedFiles.Should().Contain(f => string.Equals(f.FilePath, outputB, StringComparison.OrdinalIgnoreCase));
+                result.FileResults.Should().Contain(f => string.Equals(f.OutputPath, outputA, StringComparison.OrdinalIgnoreCase) && f.WasUpdated);
+                result.FileResults.Should().Contain(f => string.Equals(f.OutputPath, outputB, StringComparison.OrdinalIgnoreCase) && f.WasUpdated);
             }
             finally
             {

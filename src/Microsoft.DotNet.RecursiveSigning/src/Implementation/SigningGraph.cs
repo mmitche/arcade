@@ -303,6 +303,49 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             }
         }
 
+        public IReadOnlyList<FileNodeBase> GetSignedNodes()
+        {
+            lock (_lock)
+            {
+                if (!_discoveryFinalized)
+                {
+                    throw new InvalidOperationException("Discovery must be finalized before querying signed nodes.");
+                }
+
+                return _allNodes.Where(n =>
+                {
+                    if (n is ReferenceNode reference)
+                    {
+                        // Include reference if its canonical was actually signed (has cert and is Complete).
+                        return reference.CanonicalNode.State == FileNodeState.Complete
+                            && reference.CanonicalNode.CertificateIdentifier != null;
+                    }
+                    // Include node if it was signed (has cert and is Complete).
+                    return n.State == FileNodeState.Complete && n.CertificateIdentifier != null;
+                }).ToList();
+            }
+        }
+
+        public IReadOnlyList<FileNodeBase> GetSkippedNodes()
+        {
+            lock (_lock)
+            {
+                if (!_discoveryFinalized)
+                {
+                    throw new InvalidOperationException("Discovery must be finalized before querying skipped nodes.");
+                }
+
+                return _allNodes.Where(n =>
+                {
+                    if (n is ReferenceNode reference)
+                    {
+                        return reference.CanonicalNode.State == FileNodeState.Skipped;
+                    }
+                    return n.State == FileNodeState.Skipped;
+                }).ToList();
+            }
+        }
+
         public bool IsComplete()
         {
             lock (_lock)

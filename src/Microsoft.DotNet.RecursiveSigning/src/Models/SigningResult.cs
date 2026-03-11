@@ -20,11 +20,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
         public bool Success { get; }
 
         /// <summary>
-        /// Files that were signed.
-        /// </summary>
-        public IReadOnlyList<SignedFileInfo> SignedFiles { get; }
-
-        /// <summary>
         /// Errors that occurred during signing.
         /// </summary>
         public IReadOnlyList<SigningError> Errors { get; }
@@ -47,35 +42,16 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
 
         public SigningResult(
             bool success,
-            IReadOnlyList<SignedFileInfo> signedFiles,
             IReadOnlyList<SigningError> errors,
             SigningTelemetry telemetry,
             IReadOnlyList<FileResult>? fileResults = null,
             ISigningGraph? graph = null)
         {
             Success = success;
-            SignedFiles = signedFiles ?? throw new ArgumentNullException(nameof(signedFiles));
             Errors = errors ?? throw new ArgumentNullException(nameof(errors));
             Telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
             FileResults = fileResults ?? Array.Empty<FileResult>();
             Graph = graph;
-        }
-    }
-
-    /// <summary>
-    /// Information about a signed file.
-    /// </summary>
-    public sealed class SignedFileInfo
-    {
-        public string FilePath { get; }
-        public string Certificate { get; }
-        public bool WasAlreadySigned { get; }
-
-        public SignedFileInfo(string filePath, string certificate, bool wasAlreadySigned)
-        {
-            FilePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
-            Certificate = certificate ?? throw new ArgumentNullException(nameof(certificate));
-            WasAlreadySigned = wasAlreadySigned;
         }
     }
 
@@ -114,7 +90,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
     public sealed class SigningTelemetry
     {
         public int TotalFiles { get; set; }
-        public int FilesSigned { get; set; }
+        public int UniqueFilesSigned { get; set; }
         public int FilesSkipped { get; set; }
         public int DuplicateFiles { get; set; }
         public int SigningRounds { get; set; }
@@ -136,7 +112,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Models
     {
         public int RoundNumber { get; set; }
         public int FilesSigned { get; set; }
-        public int ContainersRepacked { get; set; }
         public TimeSpan SigningDuration { get; set; }
         public TimeSpan RepackDuration { get; set; }
     }

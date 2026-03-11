@@ -328,10 +328,14 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             }
 
             Console.WriteLine($"Success: {result.Success}");
-            Console.WriteLine($"Signed files: {result.SignedFiles.Count}");
-            foreach (var signedFile in result.SignedFiles)
+            Console.WriteLine($"Unique files signed: {result.Telemetry.UniqueFilesSigned}");
+
+            if (result.Graph != null)
             {
-                Console.WriteLine($"  {signedFile.FilePath} => {signedFile.Certificate}");
+                foreach (var node in result.Graph.GetSignedNodes().OfType<FileNode>())
+                {
+                    Console.WriteLine($"  {node.Location.FilePathOnDisk} => {node.CertificateIdentifier?.Name ?? "(none)"}");
+                }
             }
 
             foreach (var error in result.Errors)
@@ -354,7 +358,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             Console.WriteLine("|" + "Signing Summary".PadLeft(37).PadRight(w) + "|");
             Console.WriteLine("+" + line + "+");
             Console.WriteLine($"| {"Total files discovered",-30}{t.TotalFiles,8} {"",-18}|");
-            Console.WriteLine($"| {"Files signed",-30}{t.FilesSigned,8} {"",-18}|");
+            Console.WriteLine($"| {"Files signed (unique)",-30}{t.UniqueFilesSigned,8} {"",-18}|");
             Console.WriteLine($"| {"Files skipped",-30}{t.FilesSkipped,8} {"",-18}|");
             Console.WriteLine($"| {"Duplicate files",-30}{t.DuplicateFiles,8} {"",-18}|");
             Console.WriteLine($"| {"Signing rounds",-30}{t.SigningRounds,8} {"",-18}|");
@@ -367,11 +371,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Cli
             if (t.Rounds.Count > 0)
             {
                 Console.WriteLine("+" + line + "+");
-                Console.WriteLine($"| {"Round",7} {"Files",7} {"Containers",12} {"Sign Time",11} {"Repack Time",13} |");
+                Console.WriteLine($"| {"Round",7} {"Files",7} {"Sign Time",11} {"Repack Time",13} {"",12} |");
                 Console.WriteLine("+" + line + "+");
                 foreach (var r in t.Rounds)
                 {
-                    Console.WriteLine($"| {r.RoundNumber,7} {r.FilesSigned,7} {r.ContainersRepacked,12} {FormatDuration(r.SigningDuration),11} {FormatDuration(r.RepackDuration),13} |");
+                    Console.WriteLine($"| {r.RoundNumber,7} {r.FilesSigned,7} {FormatDuration(r.SigningDuration),11} {FormatDuration(r.RepackDuration),13} {"",12} |");
                 }
             }
 

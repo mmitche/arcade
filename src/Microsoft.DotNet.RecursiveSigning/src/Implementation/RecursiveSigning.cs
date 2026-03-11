@@ -64,7 +64,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
 
             var sw = Stopwatch.StartNew();
             var errors = new List<SigningError>();
-            var signedFiles = new List<SignedFileInfo>();
             var effectiveInputFiles = ResolveRootInputs(request.InputFiles, request.OutputDirectory);
             var effectiveRequest = new SigningRequest(effectiveInputFiles, request.TempDirectory, request.Options, request.OutputDirectory);
 
@@ -91,7 +90,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 if (errors.Count > 0)
                 {
                     _logger.LogError("Discovery phase failed with {ErrorCount} errors", errors.Count);
-                    return CreateResult(false, signedFiles, errors, sw.Elapsed, 0, 0,
+                    return CreateResult(false, errors, sw.Elapsed, 0, 0,
                         discoverySw.Elapsed, TimeSpan.Zero, TimeSpan.Zero, new List<SigningRoundTelemetry>(), 0,
                         BuildFileResults(inputOutputMapping));
                 }
@@ -118,7 +117,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 _logger.LogInformation("Phase 2: Iterative Signing");
                 var signingSw = Stopwatch.StartNew();
                 var roundTelemetry = new List<SigningRoundTelemetry>();
-                await IterativeSigningPhaseAsync(effectiveRequest, signedFiles, errors, roundTelemetry, cancellationToken);
+                await IterativeSigningPhaseAsync(effectiveRequest, errors, roundTelemetry, cancellationToken);
                 signingSw.Stop();
 
                 int duplicateCount = allNodes.OfType<ReferenceNode>().Count();
@@ -126,7 +125,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 if (errors.Count > 0)
                 {
                     _logger.LogError("Signing phase failed with {ErrorCount} errors", errors.Count);
-                    return CreateResult(false, signedFiles, errors, sw.Elapsed, 0, allNodes.Count,
+                    return CreateResult(false, errors, sw.Elapsed, 0, allNodes.Count,
                         discoverySw.Elapsed, signingSw.Elapsed, TimeSpan.Zero, roundTelemetry, duplicateCount,
                         BuildFileResults(inputOutputMapping));
                 }
@@ -134,16 +133,21 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 // Phase 3: Finalization
                 _logger.LogInformation("Phase 3: Finalization");
                 var finalizationSw = Stopwatch.StartNew();
-                FinalizationPhase(signedFiles, errors);
+                FinalizationPhase(errors);
                 finalizationSw.Stop();
 
                 sw.Stop();
                 bool success = errors.Count == 0;
-                _logger.LogInformation(
-                    "Signing completed in {Duration}ms. Success: {Success}, Files signed: {SignedCount}/{TotalCount}",
-                    sw.ElapsedMilliseconds, success, signedFiles.Count, allNodes.Count);
 
-                return CreateResult(success, signedFiles, errors, sw.Elapsed, signedFiles.Count, allNodes.Count,
+                // Compute counts from graph state
+                int uniqueFilesSigned = _signingGraph.GetAllNodes().OfType<FileNode>()
+                    .Count(n => n.State == FileNodeState.Complete);
+
+                _logger.LogInformation(
+                    "Signing completed in {Duration}ms. Success: {Success}, Unique files signed: {SignedCount}/{TotalCount}",
+                    sw.ElapsedMilliseconds, success, uniqueFilesSigned, allNodes.Count);
+
+                return CreateResult(success, errors, sw.Elapsed, uniqueFilesSigned, allNodes.Count,
                     discoverySw.Elapsed, signingSw.Elapsed, finalizationSw.Elapsed, roundTelemetry, duplicateCount,
                     BuildFileResults(inputOutputMapping));
             }
@@ -156,7 +160,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             {
                 _logger.LogError(ex, "Unexpected error during signing");
                 errors.Add(new SigningError($"Unexpected error: {ex.Message}", exception: ex));
-                return CreateResult(false, signedFiles, errors, sw.Elapsed, 0, 0,
+                return CreateResult(false, errors, sw.Elapsed, 0, 0,
                     TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, new List<SigningRoundTelemetry>(), 0,
                     BuildFileResults(inputOutputMapping));
             }
@@ -471,12 +475,10 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// Performs iterative signing rounds until all nodes are signed or no further progress can be made.
         /// </summary>
         /// <param name="request">Signing request.</param>
-        /// <param name="signedFiles">Accumulated signed file list.</param>
         /// <param name="errors">Accumulated error list.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         private async Task IterativeSigningPhaseAsync(
             SigningRequest request,
-            List<SignedFileInfo> signedFiles,
             List<SigningError> errors,
             List<SigningRoundTelemetry> roundTelemetry,
             CancellationToken cancellationToken)
@@ -495,7 +497,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 {
                     _logger.LogInformation("Signing round {Round}: {FileCount} file(s) ready", roundNumber, toSign.Count);
                     var signSw = Stopwatch.StartNew();
-                    bool signedAny = await SignRoundAsync(toSign, request, signedFiles, errors, cancellationToken);
+                    bool signedAny = await SignRoundAsync(toSign, request, errors, cancellationToken);
                     signSw.Stop();
                     roundInfo.SigningDuration = signSw.Elapsed;
                     roundInfo.FilesSigned = toSign.Count;
@@ -510,7 +512,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                     await RepackContainersAsync(toRepack, request.TempDirectory, errors, cancellationToken);
                     repackSw.Stop();
                     roundInfo.RepackDuration = repackSw.Elapsed;
-                    roundInfo.ContainersRepacked = toRepack.Count;
 
                     madeProgress = true;
 
@@ -581,13 +582,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// </summary>
         /// <param name="nodes">Nodes ready for signing.</param>
         /// <param name="request">Signing request.</param>
-        /// <param name="signedFiles">Accumulated signed file list.</param>
         /// <param name="errors">Accumulated error list.</param>
         /// <param name="cancellationToken">Cancellation token.</param>
         private async Task<bool> SignRoundAsync(
             IReadOnlyList<FileNode> nodes,
             SigningRequest request,
-            List<SignedFileInfo> signedFiles,
             List<SigningError> errors,
             CancellationToken cancellationToken)
         {
@@ -620,7 +619,6 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             {
                 _signingGraph.MarkAsComplete(node);
                 _fileDeduplicator.RegisterSignedFile(node.ContentKey, outputPath);
-                signedFiles.Add(new SignedFileInfo(node.Location.FilePathOnDisk!, node.CertificateIdentifier?.Name ?? string.Empty, false));
             }
 
             return true;
@@ -683,32 +681,13 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// <summary>
         /// Performs final verification and reporting after signing.
         /// </summary>
-        /// <param name="signedFiles">Signed file list.</param>
         /// <param name="errors">Accumulated error list.</param>
-        private void FinalizationPhase(List<SignedFileInfo> signedFiles, List<SigningError> errors)
+        private void FinalizationPhase(List<SigningError> errors)
         {
             // Phase 3 tasks:
             // - Generate report
 
             var allNodes = _signingGraph.GetAllNodes();
-
-            // For implicit deduplication, reference nodes are not signed directly.
-            // Still report them as signed if their canonical/original node was signed,
-            // but only if they represent a distinct file path (not the same extraction path).
-            var reportedPaths = new HashSet<string>(signedFiles.Select(f => f.FilePath), StringComparer.OrdinalIgnoreCase);
-            foreach (var referenceNode in allNodes.OfType<ReferenceNode>())
-            {
-                if (referenceNode.CanonicalNode.State == FileNodeState.Complete
-                    && referenceNode.Location.FilePathOnDisk != null
-                    && reportedPaths.Add(referenceNode.Location.FilePathOnDisk))
-                {
-                    signedFiles.Add(new SignedFileInfo(
-                        referenceNode.Location.FilePathOnDisk,
-                        referenceNode.CanonicalNode.CertificateIdentifier?.Name ?? string.Empty,
-                        wasAlreadySigned: true));
-                }
-            }
-
 
             var unsignedNodes = allNodes.OfType<FileNode>().Where(n => n.State != FileNodeState.Complete && n.State != FileNodeState.Skipped).ToList();
 
@@ -721,8 +700,9 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 }
             }
 
+            int signedCount = _signingGraph.GetSignedNodes().OfType<FileNode>().Count();
             _logger.LogInformation("Finalization complete. Signed: {SignedCount}, Skipped: {SkippedCount}, Errors: {ErrorCount}",
-                signedFiles.Count,
+                signedCount,
                 allNodes.OfType<FileNode>().Count(n => n.State == FileNodeState.Skipped),
                 errors.Count);
         }
@@ -809,18 +789,16 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
         /// Creates a <see cref="SigningResult" /> object from the accumulated workflow state.
         /// </summary>
         /// <param name="success">Overall success flag.</param>
-        /// <param name="signedFiles">Signed file list.</param>
         /// <param name="errors">Error list.</param>
         /// <param name="duration">Total duration.</param>
-        /// <param name="filesSigned">Count of files signed.</param>
+        /// <param name="uniqueFilesSigned">Count of unique files signed.</param>
         /// <param name="totalFiles">Total file count discovered.</param>
         /// <returns>Signing result.</returns>
         private SigningResult CreateResult(
             bool success,
-            List<SignedFileInfo> signedFiles,
             List<SigningError> errors,
             TimeSpan duration,
-            int filesSigned,
+            int uniqueFilesSigned,
             int totalFiles,
             TimeSpan discoveryDuration,
             TimeSpan signingDuration,
@@ -832,8 +810,8 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
             var telemetry = new SigningTelemetry
             {
                 TotalFiles = totalFiles,
-                FilesSigned = filesSigned,
-                FilesSkipped = totalFiles - filesSigned,
+                UniqueFilesSigned = uniqueFilesSigned,
+                FilesSkipped = _signingGraph.GetSkippedNodes().Count,
                 DuplicateFiles = duplicateFiles,
                 SigningRounds = rounds.Count,
                 Duration = duration,
@@ -843,7 +821,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Implementation
                 Rounds = rounds,
             };
 
-            return new SigningResult(success, signedFiles, errors, telemetry, fileResults, _signingGraph);
+            return new SigningResult(success, errors, telemetry, fileResults, _signingGraph);
         }
 
         /// <summary>

@@ -213,10 +213,11 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             // Assert
             result.Success.Should().BeTrue();
-            result.SignedFiles.Should().HaveCount(1);
+            result.Telemetry.UniqueFilesSigned.Should().Be(1);
             result.Errors.Should().BeEmpty();
-            result.SignedFiles[0].FilePath.Should().Be(testFile);
-            result.SignedFiles[0].Certificate.Should().Be("TestCert");
+            var signedNodes = result.Graph!.GetSignedNodes().OfType<FileNode>().ToList();
+            signedNodes.Should().ContainSingle(n => n.Location.FilePathOnDisk == testFile);
+            signedNodes[0].CertificateIdentifier!.Name.Should().Be("TestCert");
             
             // Verify mock interactions
             _mockFileAnalyzer.Verify(a => a.AnalyzeAsync(testFile, It.IsAny<System.Threading.CancellationToken>()), Times.Once);
@@ -252,7 +253,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             // Assert
             result.Success.Should().BeTrue();
-            result.SignedFiles.Count.Should().BeGreaterThan(1); // Container + nested files
+            result.Telemetry.UniqueFilesSigned.Should().BeGreaterThan(1); // Container + nested files
             result.Errors.Should().BeEmpty();
 
             // Verify container was read
@@ -451,11 +452,12 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
 
             // Assert
             result.Success.Should().BeTrue();
-            result.SignedFiles.Should().HaveCount(2);
+            result.Telemetry.UniqueFilesSigned.Should().Be(1); // Only one unique file signed (dedup)
             result.Errors.Should().BeEmpty();
 
-            // Both files should be reported as signed, but only one should have actually been signed
-            result.SignedFiles.Count(f => f.WasAlreadySigned).Should().Be(1);
+            // The duplicate should appear as a reference node whose canonical was signed
+            var signedNodes = result.Graph!.GetSignedNodes();
+            signedNodes.OfType<ReferenceNode>().Should().HaveCount(1);
             
             // Verify analysis behavior
             // The orchestrator may analyze only the first path and treat the second as a duplicate by content-key.
@@ -665,7 +667,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             // Assert
             result.Success.Should().BeTrue();
             result.Errors.Should().BeEmpty();
-            result.SignedFiles.Should().NotBeEmpty();
+            result.Telemetry.UniqueFilesSigned.Should().BeGreaterThan(0);
 
             // Verify all files were processed
             var graph = result.Graph!;
@@ -674,7 +676,7 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             // Verify telemetry
             result.Telemetry.Should().NotBeNull();
             result.Telemetry.TotalFiles.Should().BeGreaterThan(0);
-            result.Telemetry.FilesSigned.Should().BeGreaterThan(0);
+            result.Telemetry.UniqueFilesSigned.Should().BeGreaterThan(0);
             
             // Verify all input files were analyzed
             _mockFileAnalyzer.Verify(a => a.AnalyzeAsync(container1, It.IsAny<System.Threading.CancellationToken>()), Times.Once);

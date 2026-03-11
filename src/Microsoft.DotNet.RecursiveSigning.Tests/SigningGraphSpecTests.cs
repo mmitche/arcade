@@ -4,6 +4,7 @@
 #nullable enable
 
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Collections.Immutable;
 using AwesomeAssertions;
@@ -568,6 +569,113 @@ namespace Microsoft.DotNet.RecursiveSigning.Tests
             child.State.Should().Be(FileNodeState.Skipped);
             container.State.Should().Be(FileNodeState.Skipped);
             g.IsComplete().Should().BeTrue();
+        }
+
+        // ── GetSignedNodes tests ────────────────
+
+        [Fact]
+        public void GetSignedNodes_ExcludesRepackedContainerWithNoCert()
+        {
+            // A container with no certificate gets repacked but not signed.
+            // It should NOT appear in GetSignedNodes().
+            var container = CreateNode("c.zip", certificateIdentifier: null);
+            var child = CreateNode("a.dll", Signable());
+
+            var g = BuildGraph((container, null), (child, container));
+
+            g.MarkAsComplete(child);
+            g.MarkContainerAsRepacked(container);
+
+            // Container is Complete but was never signed — only repacked.
+            container.State.Should().Be(FileNodeState.Complete);
+            var signedNodes = g.GetSignedNodes();
+            signedNodes.Should().ContainSingle().Which.Should().BeSameAs(child);
+        }
+
+        [Fact]
+        public void GetSignedNodes_IncludesSignedContainerWithCert()
+        {
+            // A container with a certificate goes through repack then sign.
+            var container = CreateNode("c.zip", Signable());
+            var child = CreateNode("a.dll", Signable());
+
+            var g = BuildGraph((container, null), (child, container));
+
+            g.MarkAsComplete(child);
+            g.MarkContainerAsRepacked(container);
+            g.MarkAsComplete(container);
+
+            container.State.Should().Be(FileNodeState.Complete);
+            var signedNodes = g.GetSignedNodes();
+            signedNodes.Should().HaveCount(2);
+            signedNodes.Should().Contain(child);
+            signedNodes.Should().Contain(container);
+        }
+
+        [Fact]
+        public void GetSignedNodes_IncludesReferenceToSignedCanonical()
+        {
+            var canonical = CreateNode("a.dll", Signable());
+            var referenceLocation = new FileLocation("/test/other/a.dll", RelativePathInContainer: null);
+            var reference = new ReferenceNode(canonical.ContentKey, referenceLocation, canonical);
+
+            var g = BuildGraph((canonical, null), (reference, null));
+
+            g.MarkAsComplete(canonical);
+
+            var signedNodes = g.GetSignedNodes();
+            signedNodes.Should().HaveCount(2);
+            signedNodes.Should().Contain(canonical);
+            signedNodes.Should().Contain(reference);
+        }
+
+        [Fact]
+        public void GetSignedNodes_ExcludesReferenceToRepackedOnlyContainer()
+        {
+            // Reference node pointing at a container that was repacked but had no cert.
+            var container = CreateNode("c.zip", certificateIdentifier: null);
+            var child = CreateNode("a.dll", Signable());
+            var containerRef = new ReferenceNode(container.ContentKey,
+                new FileLocation("/test/other/c.zip", RelativePathInContainer: null), container);
+
+            var g = BuildGraph((container, null), (child, container), (containerRef, null));
+
+            g.MarkAsComplete(child);
+            g.MarkContainerAsRepacked(container);
+
+            container.State.Should().Be(FileNodeState.Complete);
+            var signedNodes = g.GetSignedNodes();
+            // Only child was actually signed; container and its reference were just repacked.
+            signedNodes.Should().ContainSingle().Which.Should().BeSameAs(child);
+        }
+
+        [Fact]
+        public void GetSignedNodes_ExcludesAlreadySignedFile()
+        {
+            // A file that was already signed before discovery should be Skipped
+            // and must NOT appear in GetSignedNodes().
+            var alreadySigned = CreateNode("a.dll", Signable(), isAlreadySigned: true);
+
+            var g = BuildGraph((alreadySigned, null));
+
+            alreadySigned.State.Should().Be(FileNodeState.Skipped);
+            g.GetSignedNodes().Should().BeEmpty();
+        }
+
+        [Fact]
+        public void GetSignedNodes_IncludesAlreadySignedFileWithAlwaysSign()
+        {
+            // A file that was already signed but has AlwaysSign=true gets re-signed
+            // and should appear in GetSignedNodes() after completion.
+            var alwaysSign = CreateNode("a.dll", SignableRegardless(), isAlreadySigned: true);
+
+            var g = BuildGraph((alwaysSign, null));
+
+            alwaysSign.State.Should().Be(FileNodeState.ReadyToSign);
+            g.MarkAsComplete(alwaysSign);
+
+            var signedNodes = g.GetSignedNodes();
+            signedNodes.Should().ContainSingle().Which.Should().BeSameAs(alwaysSign);
         }
 
     }
