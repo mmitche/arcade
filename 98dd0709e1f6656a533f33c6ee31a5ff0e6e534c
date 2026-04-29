@@ -1,0 +1,36 @@
+## Current State (2026-04-28)
+
+### What works
+- JobMonitorRunner uses DI (IAzureDevOpsService, IHelixService) with fakes for testing
+- 16 scenario tests all pass (47 total in suite)
+- Retry resubmission: on attempt > 1, failed work items are resubmitted as new Helix jobs
+- Per-work-item outcome tracking (resubmission pass overwrites prior failure)
+- Stage-scoped monitoring (monitorAllStages=false filters by stage)
+- Pipeline template: HJM runs inside Test stage, uses ./eng/common/dotnet.sh exec
+
+### What needs work
+- HelixService.ResubmitFailedWorkItemsAsync is a stub (throws NotImplementedException)
+  - Needs real Helix API implementation: get original job details, create new job with same
+    correlation payloads/queue but only failed work items, preserve BuildId/StageName properties
+- The monitor timeout + relaunch tests work but the non-PR source query still doesn't find
+  Helix jobs in manual builds (official/public/... pattern doesn't match)
+- Consider adding tests for:
+  - Retry-of-retry (attempt 3 after attempt 2 resubmission also failed)
+  - Work item name collisions across different Helix jobs
+  - Partial upload failure during result processing
+  - Resubmission when monitor crashes mid-resubmission and restarts
+
+### Test infrastructure
+- Fakes auto-advance per API call (no coupled snapshot advancement)
+- FakeAzureDevOpsService.TimelineCallCount tracks poll iterations
+- FakeHelixService.Resubmissions tracks resubmission calls for assertions
+- FakeHelixService.ConfigureResubmission(originalJob, newJobName) sets up resubmission results
+- CreateRunner(azdo, helix, stageName, attempt) helper in tests
+
+### File layout
+- JobMonitor/Interfaces/ - IAzureDevOpsService, IHelixService, IJobMonitorRunner
+- JobMonitor/Models/ - HelixJobInfo, HelixJobPassFail, WorkItemTestResults
+- JobMonitor/Services/ - AzureDevOpsService, HelixService (real implementations)
+- Sdk.Tests/Fakes/ - FakeAzureDevOpsService, FakeHelixService
+- Sdk.Tests/ScenarioHelpers/ - factory methods for timeline/helix test data
+- Sdk.Tests/JobMonitorRunnerTests.cs - all scenario tests
