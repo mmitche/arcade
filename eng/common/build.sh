@@ -231,7 +231,17 @@ function Build {
   fi
 
   local bl=""
-  if [[ "$binary_log" == true ]]; then
+  # Skip Arcade's implicit /bl if the caller already passed one via remaining arguments.
+  # This avoids overwriting a prior Build.binlog when build.ps1 is invoked multiple times
+  # in the same job (e.g., once for -build, once for -test).
+  local has_explicit_binlog=false
+  for prop in ${properties[@]+"${properties[@]}"}; do
+    if [[ "$prop" == /bl:* ]] || [[ "$prop" == -bl:* ]] || [[ "$prop" == /binaryLogger* ]] || [[ "$prop" == -binaryLogger* ]] || [[ "$prop" == /bl ]] || [[ "$prop" == -bl ]]; then
+      has_explicit_binlog=true
+      break
+    fi
+  done
+  if [[ "$binary_log" == true ]] && [[ "$has_explicit_binlog" == false ]]; then
     bl="/bl:\"$log_dir/Build.binlog\""
   fi
 

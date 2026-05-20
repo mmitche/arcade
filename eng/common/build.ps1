@@ -102,7 +102,11 @@ function Build {
   $toolsetBuildProj = InitializeToolset
   InitializeCustomToolset
 
-  $bl = if ($binaryLog) { '/bl:' + (Join-Path $LogDir 'Build.binlog') } else { '' }
+  # Skip Arcade's implicit /bl if the caller already passed one via remaining arguments.
+  # This avoids overwriting a prior Build.binlog when build.ps1 is invoked multiple times
+  # in the same job (e.g., once for -build, once for -test).
+  $hasExplicitBinlog = ($properties | Where-Object { $_ -match '^[/-](bl$|bl:|binaryLogger)' }).Count -gt 0
+  $bl = if ($binaryLog -and -not $hasExplicitBinlog) { '/bl:' + (Join-Path $LogDir 'Build.binlog') } else { '' }
   $platformArg = if ($platform) { "/p:Platform=$platform" } else { '' }
   $check = if ($buildCheck) { '/check' } else { '' }
 
